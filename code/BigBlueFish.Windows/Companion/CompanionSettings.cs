@@ -72,9 +72,9 @@ public partial class MainWindow
 #endif
         sidebar.Children.Add(new TextBlock { Text = version + " · 陪伴设置", Foreground = Brushes.SlateGray, Margin = new Thickness(5, 0, 0, 28) });
 #if COMPANION_SAFE
-        var titles = new[] { "陪伴与外观", "说话与天气", "模型与供电", "日志控制台" };
+        var titles = new[] { "陪伴与外观", "说话与天气", "模型与供电", "语音朗读", "日志控制台" };
 #else
-        var titles = new[] { "陪伴与外观", "说话与天气", "模型与供电", "连接 Agent", "日志控制台" };
+        var titles = new[] { "陪伴与外观", "说话与天气", "模型与供电", "连接 Agent", "语音朗读", "日志控制台" };
 #endif
         var pages = new StackPanel[titles.Length];
         var views = new ScrollViewer[titles.Length];
@@ -340,9 +340,10 @@ public partial class MainWindow
             base.Close();
         });
         Action? disposeMcpSettings = titles.Contains("连接 Agent") ? AddMcpSettings(pages[3], w) : null;
+        Action? disposeVoiceSettings = AddVoiceSettings(pages[Array.IndexOf(titles, "语音朗读")], w);
         Action disposeLog = BuildLogConsole(pages[^1], w, () => views[^1].Visibility == Visibility.Visible);
         foreach (var panel in pages) Card(panel);
-        disposeCompanionSettingsContent = () => { timer.Stop(); disposeMcpSettings?.Invoke(); disposeLog(); };
+        disposeCompanionSettingsContent = () => { timer.Stop(); disposeMcpSettings?.Invoke(); disposeVoiceSettings?.Invoke(); disposeLog(); };
         refreshCompanionSettings = () => BuildCompanionSettingsContent(w, selectedPage, views.Select(v => v.VerticalOffset).ToArray());
         if (scrollOffsets != null) w.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, (Action)(() =>
         {

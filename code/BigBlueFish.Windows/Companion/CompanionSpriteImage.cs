@@ -17,6 +17,7 @@ internal sealed class CompanionSpriteImage : Image
     internal CompanionSpriteImage() => Cursor = palm;
 
     internal static Cursor PalmGrab => palmGrab;
+    internal static string? LoadError { get; private set; }
 
     /// <summary>Open palm while hovering, closed palm while the button is down.</summary>
     internal void SetPressed(bool pressed)
@@ -37,9 +38,11 @@ internal sealed class CompanionSpriteImage : Image
         {
             var part = Application.GetResourceStream(new Uri($"/BigBlueFish;component/Res/Cursor/{name}.cur", UriKind.Relative));
             if (part != null) using (var stream = part.Stream) return new Cursor(stream);
+            LoadError = name + ": 资源不存在";
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            LoadError = name + ": " + error.GetType().Name + " " + error.Message;
         }
         return Cursors.Hand;
     }

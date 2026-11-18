@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -49,6 +49,17 @@ internal sealed class CompanionPreferences
         return TimeSpan.FromMinutes(range.Min + random.NextDouble() * (range.Max - range.Min));
     }
     public int BubbleDurationIndex { get; set; } = 3;
+    public bool SpeechEnabled { get; set; }
+    public string SpeechEngine { get; set; } = "f5";
+    public string SpeechVoice { get; set; } = "kid_005614";
+    public double SpeechRate { get; set; } = 1.0;
+    public double SpeechVolume { get; set; } = 1.0;
+    public int SpeechNfe { get; set; } = 24;
+    public string SpeechEndpoint { get; set; } = "http://127.0.0.1:8765";
+    public string SpeechFolder { get; set; } = @"D:\AI-Workspace\voice";
+    public bool SpeechAutoCare { get; set; } = true;
+    public bool SpeechInteraction { get; set; } = true;
+    public bool SpeechExternal { get; set; } = true;
     public int AnimationIntervalSeconds { get; set; } = 40;
     public int BreakfastHour { get; set; } = 8;
     public int LunchHour { get; set; } = 12;
@@ -112,6 +123,15 @@ internal sealed class CompanionPreferences
                     s.DinnerHour = Math.Clamp(s.DinnerHour, 0, 23);
                     s.SpeechMinMinutes = NormalizeSpeechMinimum(s.SpeechMinMinutes);
                     s.BubbleDurationIndex = Math.Clamp(s.BubbleDurationIndex, 0, BubbleDurations.Length - 1);
+                    s.SpeechEngine = string.Equals(s.SpeechEngine, "system", StringComparison.OrdinalIgnoreCase) ? "system" : "f5";
+                    s.SpeechVoice = string.IsNullOrWhiteSpace(s.SpeechVoice) ? "kid_005614" : s.SpeechVoice;
+                    s.SpeechRate = double.IsFinite(s.SpeechRate) ? Math.Clamp(s.SpeechRate, .7, 1.4) : 1;
+                    s.SpeechVolume = double.IsFinite(s.SpeechVolume) ? Math.Clamp(s.SpeechVolume, 0, 1) : 1;
+                    s.SpeechNfe = Math.Clamp(s.SpeechNfe, 8, 48);
+                    s.SpeechEndpoint = Uri.TryCreate(s.SpeechEndpoint, UriKind.Absolute, out var endpoint)
+                        && (endpoint.Scheme == Uri.UriSchemeHttp || endpoint.Scheme == Uri.UriSchemeHttps)
+                        ? s.SpeechEndpoint.TrimEnd('/') : "http://127.0.0.1:8765";
+                    s.SpeechFolder = string.IsNullOrWhiteSpace(s.SpeechFolder) ? @"D:\AI-Workspace\voice" : s.SpeechFolder;
                     s.WeatherRegionCode = CompanionRegions.District(s.WeatherRegionCode).Code;
                     return s;
                 }

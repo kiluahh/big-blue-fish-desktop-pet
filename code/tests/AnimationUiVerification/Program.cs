@@ -216,7 +216,9 @@ internal static partial class Program
     static void VerifyCursor(MainWindow w)
     {
         var sprite=(Image)Read(w,"videoImage");
-        Check(sprite.Cursor!=System.Windows.Input.Cursors.Hand,"visible character shows the palm cursor, not the system pointing hand");
+        // Per-pixel hit testing needs one decoded frame; without it the check would depend on decode timing.
+        Wait(()=>Convert.ToInt64(Property<object>(Read(w,"videoPlayer"),"Frames"))>0,20,"first animation frame for hit testing");
+        Check(sprite.Cursor!=System.Windows.Input.Cursors.Hand,"visible character shows the palm cursor, not the system pointing hand: "+CompanionSpriteImage.LoadError);
         Check(sprite.InputHitTest(new Point(1,1))==null,"transparent video margins keep the system cursor");
         Check(sprite.InputHitTest(new Point(sprite.ActualWidth/2,sprite.ActualHeight*.45))!=null,"visible character stays clickable under the hand cursor");
         var open=sprite.Cursor;
@@ -227,6 +229,56 @@ internal static partial class Program
         Check(ReferenceEquals(sprite.Cursor,open),"releasing the pet opens the palm again");
         Check(w.Cursor==null,"releasing clears the window cursor so the element cursor applies again");
         Console.WriteLine($"Cursor: {checks} real WPF cursor checks passed.");
+    }
+    static void VerifySpeechAudio(MainWindow w)
+    {
+        var sink=new RecordingSink();var engine=new RecordingEngine();
+        Field(w,"voice",new CompanionVoice(sink,engine));
+        var prefs=(CompanionPreferences)Read(w,"preferences");
+        prefs.SpeechEnabled=false;
+        Invoke(w,"ShowVoiceText","主人，语音关闭时只显示文字。",VoiceScope.Automatic);Pump(300);
+        Check(engine.Calls==0,"voice off never reaches the engine");
+        Check(sink.Plays==0,"voice off never plays audio");
+        Check(((TextBlock)Read(w,"bubbleText")).Text.Contains("语音关闭"),"bubble text still appears with the voice off");
+
+        prefs.SpeechEnabled=true;prefs.SpeechAutoCare=true;prefs.SpeechVolume=.5;
+        Invoke(w,"ShowVoiceText","主人，语音开启后这一句会被念出来。",VoiceScope.Automatic);Pump(400);
+        Check(engine.Calls==1,"voice on synthesizes once");
+        Check(sink.Plays==1,"synthesized clip reaches the player");
+        Check(Math.Abs(sink.LastVolume-.5)<.01,"playback volume comes from preferences");
+        var until=(DateTime)Read(w,"bubbleUntil");
+        Check(until==DateTime.MaxValue||until>DateTime.UtcNow.AddSeconds(1),"bubble outlives the dwell time while audio plays");
+
+        prefs.SpeechExternal=false;
+        Check(!(bool)Invoke(w,"Speaks",VoiceScope.External)!,"the external scope switch is honoured");
+        Invoke(w,"ShowVoiceText","外部文字不该出声。",VoiceScope.External);Pump(300);
+        Check(engine.Calls==1,"a muted scope never reaches the engine");
+
+        Invoke(w,"StopVoice");Check(sink.Stops>0,"stop reaches the player");
+
+        var original=File.ReadAllText("preferences.json");
+        File.WriteAllText("preferences.json","{\"SpeechRate\":9,\"SpeechVolume\":-3,\"SpeechNfe\":999,\"SpeechEngine\":\"nope\",\"SpeechEndpoint\":\"ftp://example\"}");
+        var clamped=CompanionPreferences.Read();
+        File.WriteAllText("preferences.json",original);
+        Check(Math.Abs(clamped.SpeechRate-1.4)<.001,"speech rate clamps to the top of the range");
+        Check(clamped.SpeechVolume==0,"speech volume clamps to silence");
+        Check(clamped.SpeechNfe==48,"synthesis steps clamp to the top of the range");
+        Check(clamped.SpeechEngine=="f5","an unknown engine falls back to the local service");
+        Check(clamped.SpeechEndpoint=="http://127.0.0.1:8765","a non-http endpoint falls back to the default");
+        Console.WriteLine($"Speech: {checks} voice pipeline checks passed.");
+    }
+    sealed class RecordingSink:IAudioSink
+    {
+        public int Plays,Stops;public double LastVolume=-1;public bool IsPlaying{get;private set;}
+        public void Play(byte[] wav,double volume){Plays++;LastVolume=volume;IsPlaying=true;}
+        public void Stop(){Stops++;IsPlaying=false;}
+        public void Dispose(){}
+    }
+    sealed class RecordingEngine:IVoiceEngine
+    {
+        public int Calls;public string Id=>"recording";
+        public Task<VoiceClip?> SynthesizeAsync(string text,CompanionPreferences preferences,System.Threading.CancellationToken token)
+        {Calls++;return Task.FromResult<VoiceClip?>(new VoiceClip(new byte[256],3));}
     }
     [STAThread] static int Main(string[] args)
     {
@@ -247,7 +299,14 @@ internal static partial class Program
             File.WriteAllText("preferences.json","{\"ModelEnabled\":false,\"PublicInfo\":false,\"ForegroundEnabled\":false,\"Scale\":1,\"Left\":400,\"Top\":250,\"WeatherRegionCode\":\"340104\",\"BubbleDurationIndex\":5,\"AnimationIntervalSeconds\":40}");
             var native=typeof(App).Assembly.GetType("BigBlueFish.Windows.CompanionNative")!;
             native.GetField("TestPowerOverride",Access)!.SetValue(null,false);
-            w=new MainWindow();w.Show();Wait(()=>(bool)Read(w,"companionReady"),10,"video load");
+            w=new MainWindow();w.Show();
+            if(args.Contains("--speech-audio"))
+            {
+                // The voice pipeline is independent of the decoded animation, so this mode does not wait for video.
+                Wait(()=>Read(w,"preferences")!=null,5,"settings ready");
+                VerifySpeechAudio(w);Field(w,"exitReady",true);w.Close();return 0;
+            }
+            Wait(()=>(bool)Read(w,"companionReady"),10,"video load");
             ((DispatcherTimer)Read(w,"companionTimer")).Stop();
             if(args.Contains("--mixed-dpi"))
             {
@@ -278,6 +337,11 @@ internal static partial class Program
             {
                 Wait(()=>(string)Read(w,"animationPhase")!="Startup",10,"startup finishes before cursor verification");
                 VerifyCursor(w);Field(w,"exitReady",true);w.Close();return 0;
+            }
+            if(args.Contains("--speech-audio"))
+            {
+                Wait(()=>(string)Read(w,"animationPhase")!="Startup",10,"startup finishes before voice verification");
+                VerifySpeechAudio(w);Field(w,"exitReady",true);w.Close();return 0;
             }
             var player=Read(w,"videoPlayer");var prefs=Read(w,"preferences");var layout=(Grid)Read(w,"companionLayout");
             Check(Property<double>(player,"PlaybackRate")==1.5,"startup greeting uses 1.5x playback");

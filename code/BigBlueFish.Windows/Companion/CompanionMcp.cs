@@ -189,7 +189,7 @@ public partial class MainWindow
         externalBubble = true;
         bubbleIsModelReply = false;
         bubbleUntil = DateTime.MaxValue;
-        speech.Show(text, true);
+        ShowVoiceText(text, VoiceScope.External);
         chatLog.Add(false, text);
     }
     private bool ConsumeMcpSpeech()
@@ -286,6 +286,13 @@ public partial class MainWindow
                 "BreakfastHour" or "LunchHour" or "DinnerHour" => Range(0, 23),
                 "BubbleDurationIndex" => Range(0, 7),
                 "SpeechMinMinutes" => item.Value is int minutes && CompanionPreferences.SpeechRanges.Any(r => r.Min == minutes),
+                "SpeechRate" => Range(.7, 1.4),
+                "SpeechVolume" => Range(0, 1),
+                "SpeechNfe" => Range(8, 48),
+                "SpeechEngine" => item.Value is "f5" or "system",
+                "SpeechVoice" => item.Value is string voice && voice.Length is > 0 and <= 64,
+                "SpeechEndpoint" => item.Value is string endpoint && Uri.TryCreate(endpoint, UriKind.Absolute, out var speechUri)
+                    && (speechUri.Scheme == Uri.UriSchemeHttp || speechUri.Scheme == Uri.UriSchemeHttps),
                 "WeatherRegionCode" => item.Value is string region && CompanionRegions.District(region).Code == region,
                 "LastBrushDate" => item.Value == null || item.Value is string date && DateTime.TryParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _),
                 "Left" or "Top" => item.Value == null || Range(-1000000, 1000000),
@@ -315,6 +322,7 @@ public partial class MainWindow
         if (values.ContainsKey("SpeechMinMinutes")) nextSpeech = DateTime.UtcNow.Add(preferences.NextSpeechDelay(companionRandom));
         if (values.ContainsKey("AnimationIntervalSeconds")) nextAction = DateTime.UtcNow.AddSeconds(preferences.AnimationIntervalSeconds);
         if (values.ContainsKey("BubbleDurationIndex") && bubble.Visibility == Visibility.Visible) ResetBubbleDeadline();
+        if (!preferences.SpeechEnabled) StopVoice();
         ConfigureAgent();
         if (!preferences.AgentEnabled) mcpInput?.Close();
         UpdateCompanionVisibility();

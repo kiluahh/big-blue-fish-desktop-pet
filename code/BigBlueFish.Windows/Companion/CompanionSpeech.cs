@@ -15,6 +15,8 @@ internal sealed class CompanionSpeech(TextBlock text, Border bubble, Action refr
     private readonly Stopwatch elapsed = new();
     private int[] boundaries = Array.Empty<int>();
     private int shown;
+    private int offset;
+    private double charactersPerSecond = CharactersPerSecond;
     private bool subscribed;
     internal string FullText { get; private set; } = "";
     internal bool IsTyping => timer.IsEnabled;
@@ -26,11 +28,24 @@ internal sealed class CompanionSpeech(TextBlock text, Border bubble, Action refr
         FullText = message;
         boundaries = StringInfo.ParseCombiningCharacters(message);
         shown = animate && boundaries.Length > 0 ? 1 : boundaries.Length;
+        offset = shown;
+        charactersPerSecond = CharactersPerSecond;
         text.Text = Prefix(shown);
         bubble.Visibility = Visibility.Visible;
         refresh();
         if (shown < boundaries.Length) { elapsed.Restart(); timer.Start(); }
         else completed();
+    }
+
+    /// <summary>Re-paces the remaining characters so they finish roughly with the audio track.</summary>
+    internal void Retime(double seconds)
+    {
+        if (!IsTyping || seconds <= 0) return;
+        var remaining = boundaries.Length - shown;
+        if (remaining <= 0) return;
+        charactersPerSecond = Math.Clamp(remaining / Math.Max(seconds, .5), 12, 60);
+        offset = shown;
+        elapsed.Restart();
     }
 
     internal void ShowPartial(string message)
@@ -40,6 +55,8 @@ internal sealed class CompanionSpeech(TextBlock text, Border bubble, Action refr
         FullText = message;
         boundaries = StringInfo.ParseCombiningCharacters(message);
         shown = boundaries.Length;
+        offset = shown;
+        charactersPerSecond = CharactersPerSecond;
         text.Text = message;
         bubble.Visibility = Visibility.Visible;
         refresh();
@@ -50,7 +67,7 @@ internal sealed class CompanionSpeech(TextBlock text, Border bubble, Action refr
     private void Tick(object? sender, EventArgs e)
     {
         if (bubble.Visibility != Visibility.Visible) { Cancel(); return; }
-        int count = Math.Min(boundaries.Length, 1 + (int)(elapsed.Elapsed.TotalSeconds * CharactersPerSecond));
+        int count = Math.Min(boundaries.Length, offset + (int)(elapsed.Elapsed.TotalSeconds * charactersPerSecond));
         if (count <= shown) return;
         shown = count;
         text.Text = Prefix(count);

@@ -23,7 +23,8 @@ public static class ControlTools
         new { type = "image", mimeType = dataUrl[5..dataUrl.IndexOf(';')], data = dataUrl[(dataUrl.IndexOf(',') + 1)..] } } };
     public static readonly string[] SettingNames = ["ModelEnabled", "GpuEnabled", "PublicInfo", "ForegroundEnabled", "StopModelOnBattery",
         "HideOnFullscreen", "CheckUpdatesOnStartup", "ChatLogShowAll", "WeatherRegionCode", "Scale", "BubbleScale", "SpeechMinMinutes",
-        "BubbleDurationIndex", "AnimationIntervalSeconds", "BreakfastHour", "LunchHour", "DinnerHour", "Left", "Top", "LastBrushDate", "StartupEnabled", "PuppetMode", "AgentDailySpeech", "AgentRespondToClick", "AgentRespondToDrag"];
+        "BubbleDurationIndex", "AnimationIntervalSeconds", "BreakfastHour", "LunchHour", "DinnerHour", "Left", "Top", "LastBrushDate", "StartupEnabled", "PuppetMode", "AgentDailySpeech", "AgentRespondToClick", "AgentRespondToDrag",
+        "SpeechEnabled", "SpeechEngine", "SpeechVoice", "SpeechRate", "SpeechVolume", "SpeechNfe", "SpeechEndpoint", "SpeechAutoCare", "SpeechInteraction", "SpeechExternal"];
     private const string SettingsInput = """
         {"settings":{"type":"object","additionalProperties":false,"description":"按需提供字段；省略的字段保留。字段名区分大小写。AgentEnabled 只读。成功后读取实际值；位置可能因工作区限制调整。","properties":{
           "ModelEnabled":{"type":"boolean","description":"启用内置模型；不限制外部 say。"},
@@ -50,7 +51,17 @@ public static class ControlTools
           "PuppetMode":{"type":"boolean","description":"完全外部接管。每次从false改true须等待用户在桌面确认；窗口等待期间桌宠仍可拖动。断开不会自动退出该模式。"},
           "AgentDailySpeech":{"type":"boolean","description":"日常吐字交给Agent；普通模式由鱼鱼计时，关心触发与动作接管由Agent预约唤醒。"},
           "AgentRespondToClick":{"type":"boolean","description":"点击事件是否主动发起Agent轮次，默认false；事件仍可从交互资源读取。"},
-          "AgentRespondToDrag":{"type":"boolean","description":"拖动结束是否主动发起Agent轮次，默认false。"}
+          "AgentRespondToDrag":{"type":"boolean","description":"拖动结束是否主动发起Agent轮次，默认false。"},
+          "SpeechEnabled":{"type":"boolean","description":"语音朗读总开关；关闭后只显示文字。声音来自本机语音服务或系统语音，本程序不附带模型与音色。"},
+          "SpeechEngine":{"type":"string","enum":["f5","system"],"description":"f5为本地F5-TTS服务，system为系统自带语音。"},
+          "SpeechVoice":{"type":"string","pattern":"^[A-Za-z0-9_.-]{1,64}$","description":"音色标识，取自本地语音服务提供的列表。"},
+          "SpeechRate":{"type":"number","minimum":0.7,"maximum":1.4,"description":"语速倍率，1为原速；在合成时生效。"},
+          "SpeechVolume":{"type":"number","minimum":0,"maximum":1,"description":"播放音量，0–1。"},
+          "SpeechNfe":{"type":"integer","minimum":8,"maximum":48,"description":"合成采样步数，越大越稳越慢。"},
+          "SpeechEndpoint":{"type":"string","pattern":"^https?://","description":"本地语音服务地址，如http://127.0.0.1:8765。"},
+          "SpeechAutoCare":{"type":"boolean","description":"朗读日常关心与问候。"},
+          "SpeechInteraction":{"type":"boolean","description":"朗读手动点击与吐字测试。"},
+          "SpeechExternal":{"type":"boolean","description":"朗读Agent与MCP的say原文。"}
         }}}
         """;
     public static object[] Definitions => [

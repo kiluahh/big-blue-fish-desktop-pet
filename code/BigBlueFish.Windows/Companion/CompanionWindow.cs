@@ -53,6 +53,7 @@ public partial class MainWindow
         if (speechRequestPending || weatherRequestPending) DiagnosticLog.Write(DiagnosticEvent.SpeechCancelled);
         speechRequestVersion++;
         speechRequestPending = weatherRequestPending = false;
+        StopVoice();
         if (stopRunner) brain.Stop(); else brain.CancelGeneration();
         EndModelSpeech();
     }
@@ -499,17 +500,20 @@ public partial class MainWindow
     private void ResetBubbleDeadline()
     {
         var seconds = CompanionPreferences.BubbleDurations[preferences.BubbleDurationIndex];
-        bubbleUntil = seconds == 0 ? DateTime.MaxValue : DateTime.UtcNow.AddSeconds(seconds);
+        var until = seconds == 0 ? DateTime.MaxValue : DateTime.UtcNow.AddSeconds(seconds);
+        // A sentence is often longer than the chosen dwell time; keep the bubble while it is still being spoken.
+        if (DateTime.UtcNow < voiceHoldUntil && voiceHoldUntil > until) until = voiceHoldUntil;
+        bubbleUntil = until;
     }
 
-    private void ShowCompanionBubble(string text, bool agentTriggered = false)
+    private void ShowCompanionBubble(string text, bool agentTriggered = false, VoiceScope scope = VoiceScope.Automatic)
     {
         if (PuppetActive && !agentTriggered) return;
         externalBubble = false;
         bubbleIsModelReply = true;
         bubbleUntil = DateTime.MaxValue;
         DiagnosticLog.Write(DiagnosticEvent.BubbleShown, kind: "local", chars: text.Length);
-        speech.Show(text, true);
+        ShowVoiceText(text, scope);
         chatLog.Add(false, text);
     }
 
@@ -525,15 +529,17 @@ public partial class MainWindow
         externalBubble = false;
         bubbleIsModelReply = true;
         bubbleUntil = DateTime.MaxValue;
+        StopVoice();
         speech.ShowPartial(text);
     }
 
-    private void FinishCompanionPartial(string text, bool agentTriggered = false)
+    private void FinishCompanionPartial(string text, bool agentTriggered = false, VoiceScope scope = VoiceScope.Automatic)
     {
         DiagnosticLog.Write(DiagnosticEvent.BubbleShown, kind: "local", chars: text.Length);
         ShowCompanionPartial(text, agentTriggered: agentTriggered);
         ResetBubbleDeadline();
         if (speech.FullText == text) chatLog.Add(false, text);
+        if (Speaks(scope)) _ = SpeakAsync(text);
     }
 
     private void BeginModelSpeech()
@@ -568,6 +574,7 @@ public partial class MainWindow
     private void ClearCompanionModelReply()
     {
         if (!bubbleIsModelReply) return;
+        StopVoice();
         speech.Cancel();
         bubble.Visibility = Visibility.Collapsed;
     }
@@ -634,6 +641,10 @@ public partial class MainWindow
                     case "exit":
                         base.Close();
                         return;
+                    case "say":
+                        // Drives the same path as an external say, including voice, without an MCP client.
+                        ShowMcpSpeech(File.Exists("test-say.txt") ? File.ReadAllText("test-say.txt").Trim() : "主人，鱼鱼说话测试。");
+                        break;
                     case "generate":
                         nextSpeech = now;
                         break;
@@ -700,7 +711,7 @@ public partial class MainWindow
         if (exitAnimation || hiddenByUser || fullscreenHidden || !companionReady || dragging)
             return;
         if (bubble.Visibility == Visibility.Visible && now > bubbleUntil)
-        { DiagnosticLog.Write(DiagnosticEvent.BubbleClosed, state: "expired"); bubble.Visibility = Visibility.Collapsed; }
+        { DiagnosticLog.Write(DiagnosticEvent.BubbleClosed, state: "expired"); bubble.Visibility = Visibility.Collapsed; StopVoice(); }
         if (PuppetActive || now < nextSpeech || companionSettings != null || modelInstaller != null
             || !HasScheduledMcpSpeech && !AgentDailyActive && (speechRequestPending || brain.Busy || weatherRequestPending || !preferences.ModelEnabled || !brain.ModelAvailable || !brain.CanRunOnCurrentPower))
             return;
@@ -761,10 +772,11 @@ public partial class MainWindow
         }
         if (version == speechRequestVersion && !companionClosed && !hiddenByUser && !fullscreenHidden && preferences.ModelEnabled && brain.CanRunOnCurrentPower && text.Length > 0)
         {
+            var scope = agentTriggered ? VoiceScope.External : VoiceScope.Automatic;
             if (streamed)
-                FinishCompanionPartial(text, agentTriggered);
+                FinishCompanionPartial(text, agentTriggered, scope);
             else
-                ShowCompanionBubble(text, agentTriggered);
+                ShowCompanionBubble(text, agentTriggered, scope);
         }
         else if (streamed && version == speechRequestVersion)
         {
@@ -855,6 +867,7 @@ public partial class MainWindow
         singleClickTimer?.Stop();
         videoPlayer?.Dispose();
         loadingSpinner?.Stop();
+        voice.Dispose();
         speech?.Dispose();
         brain?.Dispose();
         SaveCompanion();

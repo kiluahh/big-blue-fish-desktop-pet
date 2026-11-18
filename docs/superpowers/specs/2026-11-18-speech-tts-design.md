@@ -1,0 +1,55 @@
+# 语音朗读设计
+
+## 目标
+
+鱼鱼说话时同时出声。声音走用户自己的本地语音服务，程序和安装包不附带模型、数据集和参考音色。
+
+## 为什么不在安装包里带模型
+
+F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权也不属于本项目。把模型留在用户侧，安装包体积不变，授权责任也在使用者。程序只认一个本地 HTTP 地址。
+
+## 组成
+
+| 部分 | 位置 | 职责 |
+| --- | --- | --- |
+| `tts_server.py` | 用户语音目录（本机为 `D:\AI-Workspace\voice`） | 常驻进程，启动时加载一次 F5 模型，`POST /speak` 返回 wav，`GET /health` 返回可用音色 |
+| `CompanionVoice` | `code/BigBlueFish.Windows/Companion/CompanionVoice.cs` | 引擎选择、合成、播放、停止 |
+| `IVoiceEngine` | 同上 | `SystemVoiceEngine`（系统语音）与 `F5VoiceEngine`（HTTP）两个实现 |
+| `IAudioSink` | 同上 | 播放接缝；正式实现用 WPF `MediaPlayer`，测试替换成记录器 |
+
+不选 NAudio 的原因：仓库用 `RestoreLockedMode`，另有三份 `packages.lock.json`（常规 / Vision / Safe），加依赖要同时重新生成三份锁文件；`MediaPlayer` 已能满足音量、停止、失败事件。
+
+## 设置页
+
+设置窗口新增第 5 页「语音朗读」：
+
+- 总开关、引擎（F5 / 系统语音）、音色（从 `/health` 拉取）、语速 0.7–1.4、音量、朗读范围（日常关心 / 手动测试 / Agent 与 MCP 的 `say`）
+- 状态行显示服务是否连通，试听按钮，打开语音目录按钮
+- 明确写出「本程序不附带语音模型与音色」
+
+`preferences.json` 新增九个键：`SpeechEnabled`、`SpeechEngine`、`SpeechVoice`、`SpeechRate`、`SpeechVolume`、`SpeechNfe`、`SpeechEndpoint`、`SpeechFolder`、`SpeechAutoCare` / `SpeechInteraction` / `SpeechExternal`（后三个是范围开关）。
+
+## 时序
+
+语音是异步的，文字不等声音：
+
+1. 气泡立刻逐字显示（沿用 28 字/秒）。
+2. 合成返回后，若这段话还在显示，按音频时长重排剩余字的节奏（`CompanionSpeech.Retime`，夹在 12–60 字/秒）。
+3. 播放开始后，把气泡驻留时间抬到 `现在 + 音频时长 + 2 秒`（`voiceHoldUntil`），避免声音没播完气泡先消失。
+
+## 打断与降级
+
+会停声的路径：`InvalidateSpeechRequests`、新的一句到来、气泡自然消失、`ClearCompanionModelReply`、退出。切换新句子前先停旧音频。
+
+合成失败、服务没开、超时都只是没有声音：气泡照常显示，写一条 `SpeechFailed` 诊断日志，不弹窗、不改文字。
+
+## 验证
+
+- `AnimationUiVerification --speech-audio`：16 项，覆盖开关、引擎调用次数、音量透传、驻留延长、范围开关、停止、设置归一化。用假引擎与假播放器，CI 无声卡也能跑。
+- 实机：启动 `tts_server.py`，走一次 `say`，服务端记录 22 字 → 6.76 秒音频 / 1.95 秒合成，气泡正常显示，临时 wav 在停止后清理。
+
+## 非目标
+
+- 不做事级对齐（卡拉 OK 高亮）：本地模型没有时间戳。
+- 不做夜间静音策略，先用手动开关。
+- macOS / Linux 不接：两端的窗口层尚未实现播放。
