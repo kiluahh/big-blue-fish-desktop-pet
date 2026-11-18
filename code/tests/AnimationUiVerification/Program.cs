@@ -256,6 +256,12 @@ internal static partial class Program
 
         Invoke(w,"StopVoice");Check(sink.Stops>0,"stop reaches the player");
 
+        // Opening the settings window builds every page, including the voice page.
+        Invoke(w,"OpenCompanionSettings");Pump(300);
+        var settings=(Window)Read(w,"companionSettings");
+        Check(Children<ComboBox>(settings).Count()>=2,"the voice page renders its engine and voice pickers");
+        settings.Close();Pump(120);
+
         var original=File.ReadAllText("preferences.json");
         File.WriteAllText("preferences.json","{\"SpeechRate\":9,\"SpeechVolume\":-3,\"SpeechNfe\":999,\"SpeechEngine\":\"nope\",\"SpeechEndpoint\":\"ftp://example\"}");
         var clamped=CompanionPreferences.Read();
