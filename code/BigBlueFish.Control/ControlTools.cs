@@ -24,7 +24,7 @@ public static class ControlTools
     public static readonly string[] SettingNames = ["ModelEnabled", "GpuEnabled", "PublicInfo", "ForegroundEnabled", "StopModelOnBattery",
         "HideOnFullscreen", "CheckUpdatesOnStartup", "ChatLogShowAll", "WeatherRegionCode", "Scale", "BubbleScale", "SpeechMinMinutes",
         "BubbleDurationIndex", "AnimationIntervalSeconds", "BreakfastHour", "LunchHour", "DinnerHour", "Left", "Top", "LastBrushDate", "StartupEnabled", "PuppetMode", "AgentDailySpeech", "AgentRespondToClick", "AgentRespondToDrag",
-        "SpeechEnabled", "SpeechEngine", "SpeechVoice", "SpeechRate", "SpeechVolume", "SpeechNfe", "SpeechEndpoint", "SpeechAutoCare", "SpeechInteraction", "SpeechExternal"];
+        "SpeechEnabled", "SpeechEngine", "SpeechVoice", "SpeechRate", "SpeechVolume", "SpeechNfe", "SpeechEndpoint", "SpeechAutoCare", "SpeechInteraction", "SpeechExternal", "SpeechBubbleWithAudio"];
     private const string SettingsInput = """
         {"settings":{"type":"object","additionalProperties":false,"description":"按需提供字段；省略的字段保留。字段名区分大小写。AgentEnabled 只读。成功后读取实际值；位置可能因工作区限制调整。","properties":{
           "ModelEnabled":{"type":"boolean","description":"启用内置模型；不限制外部 say。"},
@@ -61,7 +61,8 @@ public static class ControlTools
           "SpeechEndpoint":{"type":"string","pattern":"^https?://","description":"本地语音服务地址，如http://127.0.0.1:8765。"},
           "SpeechAutoCare":{"type":"boolean","description":"朗读日常关心与问候。"},
           "SpeechInteraction":{"type":"boolean","description":"朗读手动点击与吐字测试。"},
-          "SpeechExternal":{"type":"boolean","description":"朗读Agent与MCP的say原文。"}
+          "SpeechExternal":{"type":"boolean","description":"朗读Agent与MCP的say原文。"},
+          "SpeechBubbleWithAudio":{"type":"boolean","description":"气泡等语音合成完成后再出现，让文字与声音同时开始；关闭时文字先出现、声音随后跟上。"}
         }}}
         """;
     public static object[] Definitions => [

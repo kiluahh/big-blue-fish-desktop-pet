@@ -21,7 +21,7 @@ internal sealed class CompanionSpeech(TextBlock text, Border bubble, Action refr
     internal string FullText { get; private set; } = "";
     internal bool IsTyping => timer.IsEnabled;
 
-    internal void Show(string message, bool animate)
+    internal void Show(string message, bool animate, double seconds = 0)
     {
         Cancel();
         if (!subscribed) { timer.Tick += Tick; subscribed = true; }
@@ -29,7 +29,10 @@ internal sealed class CompanionSpeech(TextBlock text, Border bubble, Action refr
         boundaries = StringInfo.ParseCombiningCharacters(message);
         shown = animate && boundaries.Length > 0 ? 1 : boundaries.Length;
         offset = shown;
-        charactersPerSecond = CharactersPerSecond;
+        // With a known clip length the text reveals exactly as long as the voice speaks.
+        charactersPerSecond = seconds > 0 && boundaries.Length > 1
+            ? Math.Clamp((boundaries.Length - 1) / Math.Max(seconds, .5), 12, 60)
+            : CharactersPerSecond;
         text.Text = Prefix(shown);
         bubble.Visibility = Visibility.Visible;
         refresh();

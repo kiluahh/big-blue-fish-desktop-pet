@@ -262,6 +262,21 @@ internal static partial class Program
         Check(Children<ComboBox>(settings).Count()>=2,"the voice page renders its engine and voice pickers");
         settings.Close();Pump(120);
 
+        // Bubble-delay mode: the text stays hidden until the clip is ready, then the two start together.
+        prefs.SpeechExternal=false;prefs.SpeechBubbleWithAudio=true;engine.DelayMilliseconds=350;
+        var bubbleText=(TextBlock)Read(w,"bubbleText");
+        Invoke(Read(w,"speech"),"Cancel");
+        bubbleText.Text="";
+        var callsBefore=engine.Calls;
+        Invoke(w,"ShowVoiceText","延迟出字这一句。",VoiceScope.Automatic);
+        Check(bubbleText.Text.Length==0,"bubble delay keeps the text hidden while synthesizing");
+        Pump(150);
+        Check(bubbleText.Text.Length==0,"bubble delay still hidden before the clip is ready");
+        Pump(700);
+        Check(bubbleText.Text.Contains("延迟出字"),"bubble delay reveals the text once the clip is ready");
+        Check(engine.Calls==callsBefore+1,"bubble delay synthesizes exactly once");
+        prefs.SpeechBubbleWithAudio=false;engine.DelayMilliseconds=0;
+
         var original=File.ReadAllText("preferences.json");
         File.WriteAllText("preferences.json","{\"SpeechRate\":9,\"SpeechVolume\":-3,\"SpeechNfe\":999,\"SpeechEngine\":\"nope\",\"SpeechEndpoint\":\"ftp://example\"}");
         var clamped=CompanionPreferences.Read();
@@ -282,9 +297,13 @@ internal static partial class Program
     }
     sealed class RecordingEngine:IVoiceEngine
     {
-        public int Calls;public string Id=>"recording";
-        public Task<VoiceClip?> SynthesizeAsync(string text,CompanionPreferences preferences,System.Threading.CancellationToken token)
-        {Calls++;return Task.FromResult<VoiceClip?>(new VoiceClip(new byte[256],3));}
+        public int Calls;public int DelayMilliseconds;public string Id=>"recording";
+        public async Task<VoiceClip?> SynthesizeAsync(string text,CompanionPreferences preferences,System.Threading.CancellationToken token)
+        {
+            Calls++;
+            if(DelayMilliseconds>0)await Task.Delay(DelayMilliseconds,token);
+            return new VoiceClip(new byte[256],3);
+        }
     }
     [STAThread] static int Main(string[] args)
     {

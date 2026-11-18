@@ -37,6 +37,8 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 2. 合成返回后，若这段话还在显示，按音频时长重排剩余字的节奏（`CompanionSpeech.Retime`，夹在 12–60 字/秒）。
 3. 播放开始后，把气泡驻留时间抬到 `现在 + 音频时长 + 2 秒`（`voiceHoldUntil`），避免声音没播完气泡先消失。
 
+设置里另有「气泡等语音准备好再出现」（`SpeechBubbleWithAudio`，默认开）。开启时不走上面第 1 步：先合成，拿到时长后再用 `CompanionSpeech.Show(text, animate, seconds)` 一次性出字并开始播放，逐字速度直接按音频长度定，两者同时开始、同时结束。合成失败时立刻退回「只显示文字」，不让主人白等。
+
 ## 打断与降级
 
 会停声的路径：`InvalidateSpeechRequests`、新的一句到来、气泡自然消失、`ClearCompanionModelReply`、退出。切换新句子前先停旧音频。

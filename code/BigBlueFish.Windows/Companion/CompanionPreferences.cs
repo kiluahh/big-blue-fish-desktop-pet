@@ -60,6 +60,8 @@ internal sealed class CompanionPreferences
     public bool SpeechAutoCare { get; set; } = true;
     public bool SpeechInteraction { get; set; } = true;
     public bool SpeechExternal { get; set; } = true;
+    // Hold the bubble until the clip is ready, so text and voice start together.
+    public bool SpeechBubbleWithAudio { get; set; } = true;
     public int AnimationIntervalSeconds { get; set; } = 40;
     public int BreakfastHour { get; set; } = 8;
     public int LunchHour { get; set; } = 12;

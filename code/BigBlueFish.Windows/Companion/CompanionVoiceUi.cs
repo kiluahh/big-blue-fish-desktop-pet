@@ -22,11 +22,46 @@ public partial class MainWindow
         _ => preferences.SpeechExternal
     };
 
-    /// <summary>Shows the bubble, then speaks it if the voice packs allow it. Text never waits for audio.</summary>
+    /// <summary>Shows the bubble, then speaks it if the voice packs allow it. Text never waits for audio unless asked.</summary>
     private void ShowVoiceText(string text, VoiceScope scope = VoiceScope.Automatic)
     {
+        if (Speaks(scope) && preferences.SpeechBubbleWithAudio)
+        {
+            _ = SpeakThenShowAsync(text);
+            return;
+        }
         speech.Show(text, true);
         if (Speaks(scope)) _ = SpeakAsync(text);
+    }
+
+    /// <summary>Bubble-delay mode: synthesize first, then reveal the text and start the clip together.</summary>
+    private async Task SpeakThenShowAsync(string text)
+    {
+        var token = voice.BeginSpeaking();
+        var started = DateTime.UtcNow;
+        DiagnosticLog.Write(DiagnosticEvent.SpeechStarted, kind: "voice", chars: text.Length);
+        VoiceClip? clip;
+        try
+        {
+            clip = await voice.SynthesizeAsync(text, preferences, token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        if (token.IsCancellationRequested) return;
+        if (clip == null)
+        {
+            // Nothing to hear, so do not keep the owner waiting: show the text as usual.
+            DiagnosticLog.Write(DiagnosticEvent.SpeechFailed, kind: "voice");
+            speech.Show(text, true);
+            return;
+        }
+        voiceHoldUntil = DateTime.UtcNow.AddSeconds(clip.Seconds + 2);
+        speech.Show(text, true, clip.Seconds);
+        voice.Play(clip, preferences);
+        DiagnosticLog.Write(DiagnosticEvent.SpeechCompleted, kind: "voice", chars: text.Length,
+            elapsedMs: (DateTime.UtcNow - started).TotalMilliseconds);
     }
 
     private async Task SpeakAsync(string text)
@@ -86,6 +121,16 @@ public partial class MainWindow
         {
             preferences.SpeechEnabled = value;
             if (!value) StopVoice();
+        });
+        Toggle("气泡等语音准备好再出现", preferences.SpeechBubbleWithAudio,
+            value => preferences.SpeechBubbleWithAudio = value);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "开启后先合成再出字，字与声音同步开始，代价是冒泡前多等一两秒；关闭则文字立刻出现，声音随后跟上。",
+            FontSize = 11,
+            Foreground = Brushes.SlateGray,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 6)
         });
 
         Label("引擎");
