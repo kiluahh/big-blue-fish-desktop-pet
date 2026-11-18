@@ -241,6 +241,18 @@ public partial class MainWindow
         panel.Children.Add(rate);
         panel.Children.Add(rateSlider);
 
+        Label("合成步数（越低越快，音质略降）");
+        var nfe = new TextBlock { Text = preferences.SpeechNfe + "（24 时每句约 2 秒，12–16 快将近一半）" };
+        var nfeSlider = new Slider { Minimum = 8, Maximum = 40, Value = preferences.SpeechNfe, TickFrequency = 2, IsSnapToTickEnabled = true };
+        nfeSlider.ValueChanged += (_, _) =>
+        {
+            preferences.SpeechNfe = (int)Math.Round(nfeSlider.Value);
+            nfe.Text = preferences.SpeechNfe + "（24 时每句约 2 秒，12–16 快将近一半）";
+            SaveCompanion();
+        };
+        panel.Children.Add(nfe);
+        panel.Children.Add(nfeSlider);
+
         Label("音量");
         var volume = new TextBlock { Text = $"{preferences.SpeechVolume:P0}" };
         var volumeSlider = new Slider { Minimum = 0, Maximum = 1, Value = preferences.SpeechVolume, TickFrequency = .05, IsSnapToTickEnabled = true };
