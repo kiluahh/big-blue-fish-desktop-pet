@@ -151,17 +151,17 @@ public partial class MainWindow
         });
 
         Label("引擎");
+        var status = new TextBlock { Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap, Text = "正在检测语音服务…" };
+        var engineIds = new System.Collections.Generic.List<string> { "f5", "kokoro", "gsv" };
         var engines = new ComboBox { Margin = new Thickness(0, 0, 0, 6) };
         engines.Items.Add("F5-TTS 本地服务（音色自然，需要显卡）");
+        engines.Items.Add("Kokoro v1.1-zh（体积小、CPU 就能实时）");
+        engines.Items.Add("GPT-SoVITS v2（MIT 权重，质量最好）");
 #if COMPANION_OCR
+        engineIds.Add("system");
         engines.Items.Add("系统语音（即时，音色较机械）");
 #endif
-        engines.SelectedIndex = preferences.SpeechEngine == "system" && engines.Items.Count > 1 ? 1 : 0;
-        engines.SelectionChanged += (_, _) =>
-        {
-            preferences.SpeechEngine = engines.SelectedIndex == 1 ? "system" : "f5";
-            SaveCompanion();
-        };
+        engines.SelectedIndex = Math.Max(0, engineIds.IndexOf(preferences.SpeechEngine));
         panel.Children.Add(engines);
 
         Label("音色（由本地服务提供）", 8);
@@ -173,9 +173,15 @@ public partial class MainWindow
             if (voices.SelectedItem is string id && !string.IsNullOrWhiteSpace(id)) { preferences.SpeechVoice = id; SaveCompanion(); }
         };
         panel.Children.Add(voices);
-
-        var status = new TextBlock { Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap, Text = "正在检测语音服务…" };
         panel.Children.Add(status);
+
+        engines.SelectionChanged += (_, _) =>
+        {
+            if (engines.SelectedIndex < 0 || engines.SelectedIndex >= engineIds.Count) return;
+            preferences.SpeechEngine = engineIds[engines.SelectedIndex];
+            SaveCompanion();
+            _ = RefreshAsync();
+        };
 
         var buttons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         void Action(string text, Action action)
@@ -187,21 +193,29 @@ public partial class MainWindow
 
         async Task RefreshAsync()
         {
-            var ids = await voice.ProbeAsync(preferences.SpeechEndpoint, fetched.Token);
+            var endpoint = preferences.EndpointFor(preferences.SpeechEngine);
+            var ok = await voice.ProbeAsync(endpoint, fetched.Token);
             if (fetched.IsCancellationRequested) return;
-            if (!ids)
+            if (!ok)
             {
-                status.Text = "语音服务未连接。请在语音目录里运行 tts_server.py，模型由本地服务自己加载；本程序不附带模型与音色。";
+                status.Text = preferences.SpeechEngine switch
+                {
+                    "kokoro" => "未连接 Kokoro 服务：运行 tts_kokoro_server.py --port 8766。",
+                    "gsv" => "未连接 GPT-SoVITS 服务：运行 tts_gsv_server.py --port 8767。",
+                    "system" => "系统语音不需要本地服务。",
+                    _ => "未连接 F5 服务：运行 tts_server.py --port 8765。"
+                };
                 return;
             }
-            var listed = await VoiceIdsAsync(fetched.Token);
-            status.Text = $"语音服务已连接（{preferences.SpeechEndpoint}）" + (listed.Count == 0 ? "" : $"，可用音色 {listed.Count} 个");
+            var listed = await VoiceIdsAsync(endpoint, fetched.Token);
+            status.Text = $"语音服务已连接（{endpoint}）" + (listed.Count == 0 ? "" : $"，可用音色 {listed.Count} 个");
             if (listed.Count > 0)
             {
                 voices.Items.Clear();
                 foreach (var id in listed) voices.Items.Add(id);
                 var index = listed.IndexOf(preferences.SpeechVoice);
-                voices.SelectedIndex = index >= 0 ? index : 0;
+                if (index < 0) { preferences.SpeechVoice = listed[0]; SaveCompanion(); index = 0; }
+                voices.SelectedIndex = index;
             }
         }
 
@@ -362,13 +376,13 @@ public partial class MainWindow
         return () => fetched.Cancel();
     }
 
-    private async Task<System.Collections.Generic.List<string>> VoiceIdsAsync(CancellationToken token)
+    private async Task<System.Collections.Generic.List<string>> VoiceIdsAsync(string endpoint, CancellationToken token)
     {
         var ids = new System.Collections.Generic.List<string>();
         try
         {
             using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-            var json = await http.GetStringAsync(preferences.SpeechEndpoint + "/health", token);
+            var json = await http.GetStringAsync(endpoint + "/health", token);
             using var document = System.Text.Json.JsonDocument.Parse(json);
             if (document.RootElement.TryGetProperty("voices", out var voices))
                 foreach (var item in voices.EnumerateArray())

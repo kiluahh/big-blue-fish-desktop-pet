@@ -292,6 +292,11 @@ internal static partial class Program
         var fine=CompanionPreferences.Read();
         File.WriteAllText("preferences.json",original);
         Check(Math.Abs(fine.SpeechPitch-1.7)<1e-9,"speech pitch keeps tenth-of-a-semitone precision");
+        File.WriteAllText("preferences.json","{\"SpeechEngine\":\"KOKORO\",\"SpeechEndpointKokoro\":\"ftp://x\"}");
+        var multi=CompanionPreferences.Read();
+        File.WriteAllText("preferences.json",original);
+        Check(multi.SpeechEngine=="kokoro","engine names normalize case-insensitively");
+        Check(multi.SpeechEndpointKokoro=="http://127.0.0.1:8766","a bad engine endpoint falls back to its own default");
         Check(clamped.SpeechVolume==0,"speech volume clamps to silence");
         Check(clamped.SpeechNfe==48,"synthesis steps clamp to the top of the range");
         Check(clamped.SpeechEngine=="f5","an unknown engine falls back to the local service");

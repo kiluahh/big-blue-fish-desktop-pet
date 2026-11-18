@@ -112,7 +112,7 @@ internal sealed class F5VoiceEngine : IVoiceEngine
             nfe = preferences.SpeechNfe
         });
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
-        using var response = await http.PostAsync(preferences.SpeechEndpoint + "/speak", content, token).ConfigureAwait(false);
+        using var response = await http.PostAsync(preferences.EndpointFor(preferences.SpeechEngine) + "/speak", content, token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode) return null;
         var wav = await response.Content.ReadAsByteArrayAsync(token).ConfigureAwait(false);
         if (wav.Length < 64) return null;

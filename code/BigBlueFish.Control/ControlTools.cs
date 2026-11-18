@@ -24,7 +24,7 @@ public static class ControlTools
     public static readonly string[] SettingNames = ["ModelEnabled", "GpuEnabled", "PublicInfo", "ForegroundEnabled", "StopModelOnBattery",
         "HideOnFullscreen", "CheckUpdatesOnStartup", "ChatLogShowAll", "WeatherRegionCode", "Scale", "BubbleScale", "SpeechMinMinutes",
         "BubbleDurationIndex", "AnimationIntervalSeconds", "BreakfastHour", "LunchHour", "DinnerHour", "Left", "Top", "LastBrushDate", "StartupEnabled", "PuppetMode", "AgentDailySpeech", "AgentRespondToClick", "AgentRespondToDrag",
-        "SpeechEnabled", "SpeechEngine", "SpeechVoice", "SpeechRate", "SpeechPitch", "SpeechVolume", "SpeechNfe", "SpeechEndpoint", "SpeechAutoCare", "SpeechInteraction", "SpeechExternal", "SpeechBubbleWithAudio"];
+        "SpeechEnabled", "SpeechEngine", "SpeechVoice", "SpeechRate", "SpeechPitch", "SpeechVolume", "SpeechNfe", "SpeechEndpoint", "SpeechEndpointKokoro", "SpeechEndpointGsv", "SpeechAutoCare", "SpeechInteraction", "SpeechExternal", "SpeechBubbleWithAudio"];
     private const string SettingsInput = """
         {"settings":{"type":"object","additionalProperties":false,"description":"按需提供字段；省略的字段保留。字段名区分大小写。AgentEnabled 只读。成功后读取实际值；位置可能因工作区限制调整。","properties":{
           "ModelEnabled":{"type":"boolean","description":"启用内置模型；不限制外部 say。"},
@@ -53,13 +53,15 @@ public static class ControlTools
           "AgentRespondToClick":{"type":"boolean","description":"点击事件是否主动发起Agent轮次，默认false；事件仍可从交互资源读取。"},
           "AgentRespondToDrag":{"type":"boolean","description":"拖动结束是否主动发起Agent轮次，默认false。"},
           "SpeechEnabled":{"type":"boolean","description":"语音朗读总开关；关闭后只显示文字。声音来自本机语音服务或系统语音，本程序不附带模型与音色。"},
-          "SpeechEngine":{"type":"string","enum":["f5","system"],"description":"f5为本地F5-TTS服务，system为系统自带语音。"},
+          "SpeechEngine":{"type":"string","enum":["f5","kokoro","gsv","system"],"description":"f5、kokoro、gsv为三种本地语音服务（分别默认监听8765/8766/8767），system为系统自带语音。"},
           "SpeechVoice":{"type":"string","pattern":"^[A-Za-z0-9_.-]{1,64}$","description":"音色标识，取自本地语音服务提供的列表。"},
           "SpeechRate":{"type":"number","minimum":0.7,"maximum":1.4,"description":"语速倍率，1为原速；在合成时生效。"},
           "SpeechPitch":{"type":"number","minimum":-6,"maximum":6,"description":"音调，单位半音，0为原声；合成后变频，不改变语速。"},
           "SpeechVolume":{"type":"number","minimum":0,"maximum":1,"description":"播放音量，0–1。"},
           "SpeechNfe":{"type":"integer","minimum":8,"maximum":48,"description":"合成采样步数，越大越稳越慢。"},
-          "SpeechEndpoint":{"type":"string","pattern":"^https?://","description":"本地语音服务地址，如http://127.0.0.1:8765。"},
+          "SpeechEndpoint":{"type":"string","pattern":"^https?://","description":"F5服务地址，如http://127.0.0.1:8765。"},
+          "SpeechEndpointKokoro":{"type":"string","pattern":"^https?://","description":"Kokoro服务地址，默认http://127.0.0.1:8766。"},
+          "SpeechEndpointGsv":{"type":"string","pattern":"^https?://","description":"GPT-SoVITS服务地址，默认http://127.0.0.1:8767。"},
           "SpeechAutoCare":{"type":"boolean","description":"朗读日常关心与问候。"},
           "SpeechInteraction":{"type":"boolean","description":"朗读手动点击与吐字测试。"},
           "SpeechExternal":{"type":"boolean","description":"朗读Agent与MCP的say原文。"},

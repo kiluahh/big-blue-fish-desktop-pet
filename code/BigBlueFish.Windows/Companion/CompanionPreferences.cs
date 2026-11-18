@@ -57,8 +57,17 @@ internal sealed class CompanionPreferences
     public double SpeechVolume { get; set; } = 1.0;
     public int SpeechNfe { get; set; } = 24;
     public string SpeechEndpoint { get; set; } = "http://127.0.0.1:8765";
+    public string SpeechEndpointKokoro { get; set; } = "http://127.0.0.1:8766";
+    public string SpeechEndpointGsv { get; set; } = "http://127.0.0.1:8767";
     // Empty means the voice folder inside this installation's data directory. No absolute paths are assumed.
     public string SpeechFolder { get; set; } = "";
+    internal string EndpointFor(string engine) => engine switch
+    {
+        "kokoro" => SpeechEndpointKokoro,
+        "gsv" => SpeechEndpointGsv,
+        _ => SpeechEndpoint
+    };
+    [JsonIgnore] internal string SpeechEndpointForCurrent => EndpointFor(SpeechEngine);
     // Where the app keeps the files it writes for speech (cached clips). Created on demand.
     [JsonIgnore] public string SpeechDirectory => string.IsNullOrWhiteSpace(SpeechFolder)
         ? Path.Combine(Environment.CurrentDirectory, "voice")
@@ -99,8 +108,12 @@ internal sealed class CompanionPreferences
     public double? Left { get; set; }
     public double? Top { get; set; }
 
-    public static CompanionPreferences Read()
-    {
+    internal static string NormalizeEndpoint(string value, string fallback) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? value.TrimEnd('/')
+            : fallback;
+
+    public static CompanionPreferences Read()    {
         foreach (var p in new[]
         {
             "preferences.json",
@@ -131,15 +144,21 @@ internal sealed class CompanionPreferences
                     s.DinnerHour = Math.Clamp(s.DinnerHour, 0, 23);
                     s.SpeechMinMinutes = NormalizeSpeechMinimum(s.SpeechMinMinutes);
                     s.BubbleDurationIndex = Math.Clamp(s.BubbleDurationIndex, 0, BubbleDurations.Length - 1);
-                    s.SpeechEngine = string.Equals(s.SpeechEngine, "system", StringComparison.OrdinalIgnoreCase) ? "system" : "f5";
+                    s.SpeechEngine = s.SpeechEngine?.Trim().ToLowerInvariant() switch
+                    {
+                        "system" => "system",
+                        "kokoro" => "kokoro",
+                        "gsv" => "gsv",
+                        _ => "f5"
+                    };
                     s.SpeechVoice = string.IsNullOrWhiteSpace(s.SpeechVoice) ? "kid_005614" : s.SpeechVoice;
                     s.SpeechRate = double.IsFinite(s.SpeechRate) ? Math.Clamp(s.SpeechRate, .7, 1.4) : 1;
                     s.SpeechPitch = double.IsFinite(s.SpeechPitch) ? Math.Clamp(s.SpeechPitch, -6, 6) : 0;
                     s.SpeechVolume = double.IsFinite(s.SpeechVolume) ? Math.Clamp(s.SpeechVolume, 0, 1) : 1;
                     s.SpeechNfe = Math.Clamp(s.SpeechNfe, 8, 48);
-                    s.SpeechEndpoint = Uri.TryCreate(s.SpeechEndpoint, UriKind.Absolute, out var endpoint)
-                        && (endpoint.Scheme == Uri.UriSchemeHttp || endpoint.Scheme == Uri.UriSchemeHttps)
-                        ? s.SpeechEndpoint.TrimEnd('/') : "http://127.0.0.1:8765";
+                    s.SpeechEndpoint = NormalizeEndpoint(s.SpeechEndpoint, "http://127.0.0.1:8765");
+                    s.SpeechEndpointKokoro = NormalizeEndpoint(s.SpeechEndpointKokoro, "http://127.0.0.1:8766");
+                    s.SpeechEndpointGsv = NormalizeEndpoint(s.SpeechEndpointGsv, "http://127.0.0.1:8767");
                     s.SpeechFolder = string.IsNullOrWhiteSpace(s.SpeechFolder) ? "" : s.SpeechFolder.Trim();
                     s.WeatherRegionCode = CompanionRegions.District(s.WeatherRegionCode).Code;
                     return s;

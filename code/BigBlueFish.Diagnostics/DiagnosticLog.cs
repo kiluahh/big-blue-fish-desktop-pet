@@ -48,7 +48,7 @@ public static class DiagnosticLog
     static readonly HashSet<string> settingNames = new(("ModelEnabled GpuEnabled PublicInfo ForegroundEnabled StopModelOnBattery HideOnFullscreen CheckUpdatesOnStartup "
         + "AgentEnabled AgentHarnessId AgentDailySpeech PuppetMode AgentRespondToClick AgentRespondToDrag WeatherRegionCode Scale BubbleScale SpeechMinMinutes BubbleDurationIndex "
         + "AnimationIntervalSeconds BreakfastHour LunchHour DinnerHour LastBrushDate Left Top StartupEnabled "
-        + "SpeechEnabled SpeechEngine SpeechVoice SpeechRate SpeechPitch SpeechVolume SpeechNfe SpeechEndpoint SpeechAutoCare SpeechInteraction SpeechExternal SpeechBubbleWithAudio "
+        + "SpeechEnabled SpeechEngine SpeechVoice SpeechRate SpeechPitch SpeechVolume SpeechNfe SpeechEndpoint SpeechEndpointKokoro SpeechEndpointGsv SpeechAutoCare SpeechInteraction SpeechExternal SpeechBubbleWithAudio "
         + "McpEnabled McpDoubleClickChat McpWakeEnabled McpWakeOnText McpWakeOnClick McpWakeOnDrag AgentWorkspaceId").Split(' '), StringComparer.Ordinal);
     static HashSet<string> LoadActions()
     {

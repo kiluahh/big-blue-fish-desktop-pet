@@ -290,9 +290,10 @@ public partial class MainWindow
                 "SpeechPitch" => Range(-6, 6),
                 "SpeechVolume" => Range(0, 1),
                 "SpeechNfe" => Range(8, 48),
-                "SpeechEngine" => item.Value is "f5" or "system",
+                "SpeechEngine" => item.Value is "f5" or "kokoro" or "gsv" or "system",
                 "SpeechVoice" => item.Value is string voice && voice.Length is > 0 and <= 64,
-                "SpeechEndpoint" => item.Value is string endpoint && Uri.TryCreate(endpoint, UriKind.Absolute, out var speechUri)
+                "SpeechEndpoint" or "SpeechEndpointKokoro" or "SpeechEndpointGsv" => item.Value is string endpoint
+                    && Uri.TryCreate(endpoint, UriKind.Absolute, out var speechUri)
                     && (speechUri.Scheme == Uri.UriSchemeHttp || speechUri.Scheme == Uri.UriSchemeHttps),
                 "WeatherRegionCode" => item.Value is string region && CompanionRegions.District(region).Code == region,
                 "LastBrushDate" => item.Value == null || item.Value is string date && DateTime.TryParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _),
