@@ -256,6 +256,19 @@ internal static partial class Program
 
         Invoke(w,"StopVoice");Check(sink.Stops>0,"stop reaches the player");
 
+        // Volume above 100% is applied to the samples because MediaPlayer stops at 1.0.
+        var tiny=new byte[48];
+        System.Text.Encoding.ASCII.GetBytes("RIFF").CopyTo(tiny,0);
+        System.Text.Encoding.ASCII.GetBytes("WAVE").CopyTo(tiny,8);
+        System.Text.Encoding.ASCII.GetBytes("fmt ").CopyTo(tiny,12);
+        System.Text.Encoding.ASCII.GetBytes("data").CopyTo(tiny,36);
+        BitConverter.GetBytes(4).CopyTo(tiny,40);
+        BitConverter.GetBytes((short)4096).CopyTo(tiny,44);
+        BitConverter.GetBytes((short)-4096).CopyTo(tiny,46);
+        var louder=MediaAudioSink.Amplify(tiny,2);
+        Check(BitConverter.ToInt16(louder,44)==8192&&BitConverter.ToInt16(louder,46)==-8192,"volume above 100 percent scales the samples");
+        Check(BitConverter.ToInt16(tiny,44)==4096,"amplifying leaves the original clip untouched");
+
         // Opening the settings window builds every page, including the voice page.
         Invoke(w,"OpenCompanionSettings");Pump(300);
         var settings=(Window)Read(w,"companionSettings");

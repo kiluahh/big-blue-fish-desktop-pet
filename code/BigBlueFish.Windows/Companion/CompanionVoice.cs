@@ -58,12 +58,47 @@ internal sealed class MediaAudioSink : IAudioSink
         System.IO.Directory.CreateDirectory(folder);
         Prune(folder);
         var name = Path.Combine(folder, $"clip-{Environment.ProcessId}-{++generation}.wav");
+        // MediaPlayer stops at 100%; anything louder is applied to the samples first.
+        var gain = Math.Clamp(volume, 0, 2);
+        if (gain > 1.001)
+        {
+            wav = Amplify(wav, gain);
+            gain = 1;
+        }
         File.WriteAllBytes(name, wav);
         file = name;
-        player.Volume = Math.Clamp(volume, 0, 1);
+        player.Volume = Math.Clamp(gain, 0, 1);
         player.Open(new Uri(name));
         player.Play();
         IsPlaying = true;
+    }
+
+    // Scales 16-bit PCM in place; hard clipping is acceptable for the small boosts the slider allows.
+    internal static byte[] Amplify(byte[] wav, double gain)
+    {
+        int position = 12, start = -1, length = 0;
+        while (position + 8 <= wav.Length)
+        {
+            var id = System.Text.Encoding.ASCII.GetString(wav, position, 4);
+            var size = BitConverter.ToInt32(wav, position + 4);
+            if (id == "data")
+            {
+                start = position + 8;
+                length = Math.Min(size, wav.Length - start);
+                break;
+            }
+            position += 8 + size + (size & 1);
+        }
+        if (start < 0) return wav;
+        var copy = (byte[])wav.Clone();
+        for (var i = start; i + 1 < start + length; i += 2)
+        {
+            var scaled = (int)Math.Round(BitConverter.ToInt16(copy, i) * gain);
+            var clamped = Math.Clamp(scaled, short.MinValue, short.MaxValue);
+            copy[i] = (byte)(clamped & 0xFF);
+            copy[i + 1] = (byte)((clamped >> 8) & 0xFF);
+        }
+        return copy;
     }
 
     // Clips are transient; a killed process leaves a few behind, so drop anything old on the next play.
@@ -109,6 +144,7 @@ internal sealed class F5VoiceEngine : IVoiceEngine
             voice = preferences.SpeechVoice,
             speed = preferences.SpeechRate,
             pitch = preferences.SpeechPitch,
+            gpu = preferences.SpeechUseGpu,
             nfe = preferences.SpeechNfe
         });
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");

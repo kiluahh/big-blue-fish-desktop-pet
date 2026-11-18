@@ -163,8 +163,8 @@ public partial class MainWindow
 #endif
         engines.SelectedIndex = Math.Max(0, engineIds.IndexOf(preferences.SpeechEngine));
         panel.Children.Add(engines);
-
-        Label("音色（由本地服务提供）", 8);
+        var voiceLabel = new TextBlock { Text = "音色（由本地服务提供）", Margin = new Thickness(0, 8, 0, 4), TextWrapping = TextWrapping.Wrap };
+        panel.Children.Add(voiceLabel);
         var voices = new ComboBox { Margin = new Thickness(0, 0, 0, 4) };
         voices.Items.Add(preferences.SpeechVoice);
         voices.SelectedIndex = 0;
@@ -174,11 +174,25 @@ public partial class MainWindow
         };
         panel.Children.Add(voices);
         panel.Children.Add(status);
+        // GPT-SoVITS picks its own reference voice, so the picker would only mislead.
+        void ApplyVoicePicker()
+        {
+            var show = preferences.SpeechEngine != "gsv" && preferences.SpeechEngine != "system";
+            voiceLabel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            voices.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        }
+        ApplyVoicePicker();
+        Toggle("使用显卡加速（关闭则用 CPU）", preferences.SpeechUseGpu, value =>
+        {
+            preferences.SpeechUseGpu = value;
+            status.Text = value ? "已切到显卡：下一句会让语音服务重新加载模型。" : "已切到 CPU：下一句会让语音服务重新加载模型。";
+        });
 
         engines.SelectionChanged += (_, _) =>
         {
             if (engines.SelectedIndex < 0 || engines.SelectedIndex >= engineIds.Count) return;
             preferences.SpeechEngine = engineIds[engines.SelectedIndex];
+            ApplyVoicePicker();
             SaveCompanion();
             _ = RefreshAsync();
         };
@@ -283,7 +297,7 @@ public partial class MainWindow
 
         Label("音量");
         var volume = new TextBlock { Text = $"{preferences.SpeechVolume:P0}" };
-        var volumeSlider = new Slider { Minimum = 0, Maximum = 1, Value = preferences.SpeechVolume, TickFrequency = .05, IsSnapToTickEnabled = true };
+        var volumeSlider = new Slider { Minimum = 0, Maximum = 2, Value = preferences.SpeechVolume, TickFrequency = .05, IsSnapToTickEnabled = true };
         volumeSlider.ValueChanged += (_, _) =>
         {
             preferences.SpeechVolume = volumeSlider.Value;

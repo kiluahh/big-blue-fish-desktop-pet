@@ -60,23 +60,49 @@ def find_voice(voice_id: str) -> Path:
     raise KeyError(f"未知音色：{voice_id}")
 
 
+def cuda_ready() -> bool:
+    """GPU 只在真的可用时用；第一次调用会缓存结果。"""
+    global _CUDA
+    if _CUDA is None:
+        try:
+            import torch
+
+            _CUDA = bool(torch.cuda.is_available())
+        except Exception:
+            _CUDA = False
+    return _CUDA
+
+
+_CUDA = None
 class Synthesizer:
     def __init__(self, model_name: str, device: str, models_dir: Path | None = None):
         self.lock = threading.Lock()
         self.model_name = model_name
-        started = time.perf_counter()
-        self.device = device
-        self.tts = f5.get_model(model_name, device, models_dir)
-        self.load_seconds = time.perf_counter() - started
-        print(f"[tts] 模型已加载 {model_name} on {device}，耗时 {self.load_seconds:.1f}s", flush=True)
+        self.models_dir = models_dir
+        self.device = None
+        self.tts = None
+        self.load_seconds = 0.0
+        self.ensure_device(device)
 
-    def speak(self, text: str, voice: str, speed: float, nfe: int, cfg: float, seed: int | None, pitch: float = 0.0) -> tuple[bytes, float]:
+    def ensure_device(self, device: str) -> None:
+        """Reload on the requested device; the previous copy is dropped so VRAM is not doubled."""
+        if device == self.device and self.tts is not None:
+            return
+        f5._MODEL.clear()
+        started = time.perf_counter()
+        self.tts = f5.get_model(self.model_name, device, self.models_dir)
+        self.device = device
+        self.load_seconds = time.perf_counter() - started
+        print(f"[tts] 模型已加载 {self.model_name} on {device}，耗时 {self.load_seconds:.1f}s", flush=True)
+
+    def speak(self, text: str, voice: str, speed: float, nfe: int, cfg: float, seed: int | None, pitch: float = 0.0, device: str = "cuda") -> tuple[bytes, float]:
         import numpy as np
         import soundfile as sf
 
         ref_path = find_voice(voice)
         ref_text = ref_path.with_suffix(".txt").read_text(encoding="utf-8").strip()
         with self.lock:
+            self.ensure_device(device)
             wav, sr, _ = self.tts.infer(
                 ref_file=str(ref_path),
                 ref_text=ref_text,
@@ -142,6 +168,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "text 为空"})
                 return
             started = time.perf_counter()
+            request_device = "cuda" if (request.get("gpu", True) and cuda_ready()) else "cpu"
             audio, seconds = self.synthesizer.speak(
                 text=text[:1000],
                 voice=str(request.get("voice") or DEFAULT_VOICE),
@@ -150,6 +177,7 @@ class Handler(BaseHTTPRequestHandler):
                 cfg=float(request.get("cfg") or 2.0),
                 seed=request.get("seed"),
                 pitch=float(request.get("pitch") or 0.0),
+                device=request_device,
             )
             elapsed = time.perf_counter() - started
             self.send_response(200)

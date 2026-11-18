@@ -288,7 +288,7 @@ public partial class MainWindow
                 "SpeechMinMinutes" => item.Value is int minutes && CompanionPreferences.SpeechRanges.Any(r => r.Min == minutes),
                 "SpeechRate" => Range(.7, 1.4),
                 "SpeechPitch" => Range(-6, 6),
-                "SpeechVolume" => Range(0, 1),
+                "SpeechVolume" => Range(0, 2),
                 "SpeechNfe" => Range(8, 48),
                 "SpeechEngine" => item.Value is "f5" or "kokoro" or "gsv" or "system",
                 "SpeechVoice" => item.Value is string voice && voice.Length is > 0 and <= 64,

@@ -56,6 +56,8 @@ internal sealed class CompanionPreferences
     public double SpeechPitch { get; set; } = 0;
     public double SpeechVolume { get; set; } = 1.0;
     public int SpeechNfe { get; set; } = 24;
+    // Engines reload on the other device when this changes.
+    public bool SpeechUseGpu { get; set; } = true;
     public string SpeechEndpoint { get; set; } = "http://127.0.0.1:8765";
     public string SpeechEndpointKokoro { get; set; } = "http://127.0.0.1:8766";
     public string SpeechEndpointGsv { get; set; } = "http://127.0.0.1:8767";
@@ -154,7 +156,7 @@ internal sealed class CompanionPreferences
                     s.SpeechVoice = string.IsNullOrWhiteSpace(s.SpeechVoice) ? "kid_005614" : s.SpeechVoice;
                     s.SpeechRate = double.IsFinite(s.SpeechRate) ? Math.Clamp(s.SpeechRate, .7, 1.4) : 1;
                     s.SpeechPitch = double.IsFinite(s.SpeechPitch) ? Math.Clamp(s.SpeechPitch, -6, 6) : 0;
-                    s.SpeechVolume = double.IsFinite(s.SpeechVolume) ? Math.Clamp(s.SpeechVolume, 0, 1) : 1;
+                    s.SpeechVolume = double.IsFinite(s.SpeechVolume) ? Math.Clamp(s.SpeechVolume, 0, 2) : 1;
                     s.SpeechNfe = Math.Clamp(s.SpeechNfe, 8, 48);
                     s.SpeechEndpoint = NormalizeEndpoint(s.SpeechEndpoint, "http://127.0.0.1:8765");
                     s.SpeechEndpointKokoro = NormalizeEndpoint(s.SpeechEndpointKokoro, "http://127.0.0.1:8766");
