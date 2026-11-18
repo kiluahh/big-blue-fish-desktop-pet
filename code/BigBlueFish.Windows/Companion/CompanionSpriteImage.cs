@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -34,11 +35,46 @@ internal sealed class CompanionSpriteImage : Image
     // hand keeps the pet usable if a trimmed build drops the resource.
     private static Cursor LoadCursor(string name)
     {
+        byte[] bytes;
         try
         {
             var part = Application.GetResourceStream(new Uri($"/BigBlueFish;component/Res/Cursor/{name}.cur", UriKind.Relative));
-            if (part != null) using (var stream = part.Stream) return new Cursor(stream);
-            LoadError = name + ": 资源不存在";
+            if (part == null)
+            {
+                LoadError = name + ": 资源不存在";
+                return Cursors.Hand;
+            }
+            using var stream = part.Stream;
+            using var buffer = new MemoryStream();
+            stream.CopyTo(buffer);
+            bytes = buffer.ToArray();
+        }
+        catch (Exception error)
+        {
+            LoadError = name + ": " + error.GetType().Name + " " + error.Message;
+            return Cursors.Hand;
+        }
+
+        // WPF's stream-based Cursor stages the image under %TEMP%\WPF, which some locked-down
+        // sandboxes refuse. Loading from a file in our own directory avoids that temp copy.
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            return new Cursor(stream);
+        }
+        catch (Exception error)
+        {
+            LoadError = name + ": " + error.GetType().Name + " " + error.Message;
+        }
+
+        try
+        {
+            var folder = Path.Combine(Environment.CurrentDirectory, "cursors");
+            Directory.CreateDirectory(folder);
+            var path = Path.Combine(folder, name + ".cur");
+            File.WriteAllBytes(path, bytes);
+            LoadError = null;
+            return new Cursor(path);
         }
         catch (Exception error)
         {
