@@ -32,11 +32,13 @@ internal interface IAudioSink : IDisposable
 internal sealed class MediaAudioSink : IAudioSink
 {
     private readonly MediaPlayer player = new();
+    private readonly Func<string> directory;
     private string? file;
     private int generation;
 
-    public MediaAudioSink()
+    public MediaAudioSink(Func<string>? directory = null)
     {
+        this.directory = directory ?? (() => Path.GetTempPath());
         player.Volume = 1;
         player.MediaEnded += (_, _) => { };
         player.MediaFailed += (_, _) => Stop();
@@ -47,13 +49,30 @@ internal sealed class MediaAudioSink : IAudioSink
     public void Play(byte[] wav, double volume)
     {
         Stop();
-        var name = Path.Combine(Path.GetTempPath(), $"bigbluefish-voice-{Environment.ProcessId}-{++generation}.wav");
+        var folder = directory();
+        System.IO.Directory.CreateDirectory(folder);
+        Prune(folder);
+        var name = Path.Combine(folder, $"clip-{Environment.ProcessId}-{++generation}.wav");
         File.WriteAllBytes(name, wav);
         file = name;
         player.Volume = Math.Clamp(volume, 0, 1);
         player.Open(new Uri(name));
         player.Play();
         IsPlaying = true;
+    }
+
+    // Clips are transient; a killed process leaves a few behind, so drop anything old on the next play.
+    private static void Prune(string folder)
+    {
+        try
+        {
+            foreach (var stale in System.IO.Directory.EnumerateFiles(folder, "clip-*.wav"))
+                if (DateTime.UtcNow - File.GetLastWriteTimeUtc(stale) > TimeSpan.FromHours(1))
+                    File.Delete(stale);
+        }
+        catch
+        {
+        }
     }
 
     public void Stop()

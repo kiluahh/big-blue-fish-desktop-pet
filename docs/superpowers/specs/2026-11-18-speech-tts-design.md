@@ -12,7 +12,7 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 
 | 部分 | 位置 | 职责 |
 | --- | --- | --- |
-| `tts_server.py` | 用户语音目录（本机为 `D:\AI-Workspace\voice`） | 常驻进程，启动时加载一次 F5 模型，`POST /speak` 返回 wav，`GET /health` 返回可用音色 |
+| `tts_server.py` | 由使用者放在语音文件夹里运行 | 常驻进程，启动时加载一次 F5 模型，`POST /speak` 返回 wav，`GET /health` 返回可用音色 |
 | `CompanionVoice` | `code/BigBlueFish.Windows/Companion/CompanionVoice.cs` | 引擎选择、合成、播放、停止 |
 | `IVoiceEngine` | 同上 | `SystemVoiceEngine`（系统语音）与 `F5VoiceEngine`（HTTP）两个实现 |
 | `IAudioSink` | 同上 | 播放接缝；正式实现用 WPF `MediaPlayer`，测试替换成记录器 |
@@ -27,7 +27,17 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 - 状态行显示服务是否连通，试听按钮，打开语音目录按钮
 - 明确写出「本程序不附带语音模型与音色」
 
-`preferences.json` 新增九个键：`SpeechEnabled`、`SpeechEngine`、`SpeechVoice`、`SpeechRate`、`SpeechVolume`、`SpeechNfe`、`SpeechEndpoint`、`SpeechFolder`、`SpeechAutoCare` / `SpeechInteraction` / `SpeechExternal`（后三个是范围开关）。
+`preferences.json` 新增九个键：`SpeechEnabled`、`SpeechEngine`、`SpeechVoice`、`SpeechRate`、`SpeechVolume`、`SpeechNfe`、`SpeechEndpoint`、`SpeechFolder`、`SpeechAutoCare` / `SpeechInteraction` / `SpeechExternal`（后三个是范围开关），另有 `SpeechBubbleWithAudio`。
+
+## 文件路径
+
+语音相关的文件只落在安装目录里，不写死任何绝对路径：
+
+- `SpeechFolder` 留空表示 `<安装目录>\data\voice`（`CompanionPreferences.SpeechDirectory`）。填了才用自定义路径。
+- 播放用的临时 wav 写在 `<语音文件夹>\cache\`，命名 `clip-<进程>-<序号>.wav`，播放结束即删；每次播放顺手清掉一小时前的残留。
+- 启用语音时启动即建好这个文件夹，设置页的「打开语音目录」也指向它。
+
+模型、参考音色和 `tts_server.py` 由使用者自己放进这个文件夹（或别的自选目录），程序只按 `SpeechEndpoint` 去连，不猜路径。
 
 ## 时序
 

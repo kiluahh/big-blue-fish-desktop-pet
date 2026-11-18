@@ -56,7 +56,12 @@ internal sealed class CompanionPreferences
     public double SpeechVolume { get; set; } = 1.0;
     public int SpeechNfe { get; set; } = 24;
     public string SpeechEndpoint { get; set; } = "http://127.0.0.1:8765";
-    public string SpeechFolder { get; set; } = @"D:\AI-Workspace\voice";
+    // Empty means the voice folder inside this installation's data directory. No absolute paths are assumed.
+    public string SpeechFolder { get; set; } = "";
+    // Where the app keeps the files it writes for speech (cached clips). Created on demand.
+    [JsonIgnore] public string SpeechDirectory => string.IsNullOrWhiteSpace(SpeechFolder)
+        ? Path.Combine(Environment.CurrentDirectory, "voice")
+        : Path.GetFullPath(SpeechFolder);
     public bool SpeechAutoCare { get; set; } = true;
     public bool SpeechInteraction { get; set; } = true;
     public bool SpeechExternal { get; set; } = true;
@@ -133,7 +138,7 @@ internal sealed class CompanionPreferences
                     s.SpeechEndpoint = Uri.TryCreate(s.SpeechEndpoint, UriKind.Absolute, out var endpoint)
                         && (endpoint.Scheme == Uri.UriSchemeHttp || endpoint.Scheme == Uri.UriSchemeHttps)
                         ? s.SpeechEndpoint.TrimEnd('/') : "http://127.0.0.1:8765";
-                    s.SpeechFolder = string.IsNullOrWhiteSpace(s.SpeechFolder) ? @"D:\AI-Workspace\voice" : s.SpeechFolder;
+                    s.SpeechFolder = string.IsNullOrWhiteSpace(s.SpeechFolder) ? "" : s.SpeechFolder.Trim();
                     s.WeatherRegionCode = CompanionRegions.District(s.WeatherRegionCode).Code;
                     return s;
                 }

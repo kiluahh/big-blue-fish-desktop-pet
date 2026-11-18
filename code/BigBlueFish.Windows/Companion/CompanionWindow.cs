@@ -118,6 +118,9 @@ public partial class MainWindow
         DiagnosticLog.ConfigureDirectories(AppContext.BaseDirectory, Environment.CurrentDirectory);
         DiagnosticLog.Write(DiagnosticEvent.AppStarted, kind: "Windows", directory: Environment.CurrentDirectory);
         preferences = CompanionPreferences.Read();
+        voice = new CompanionVoice(new MediaAudioSink(() => VoiceCacheDirectory));
+        if (preferences.SpeechEnabled)
+            try { System.IO.Directory.CreateDirectory(preferences.SpeechDirectory); } catch { }
         DiagnosticLog.ObserveSettings(preferences);
         if (CompanionNative.IsExternalForegroundCandidate(startupForeground))
             lastExternalForeground = startupForeground;

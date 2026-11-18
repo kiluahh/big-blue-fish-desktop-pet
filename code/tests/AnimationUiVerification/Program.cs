@@ -286,6 +286,7 @@ internal static partial class Program
         Check(clamped.SpeechNfe==48,"synthesis steps clamp to the top of the range");
         Check(clamped.SpeechEngine=="f5","an unknown engine falls back to the local service");
         Check(clamped.SpeechEndpoint=="http://127.0.0.1:8765","a non-http endpoint falls back to the default");
+        Check(clamped.SpeechDirectory==Path.Combine(Environment.CurrentDirectory,"voice"),"the voice folder defaults to the installation data directory");
         Console.WriteLine($"Speech: {checks} voice pipeline checks passed.");
     }
     sealed class RecordingSink:IAudioSink

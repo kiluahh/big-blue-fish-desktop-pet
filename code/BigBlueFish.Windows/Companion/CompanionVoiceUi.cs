@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -12,6 +13,8 @@ internal enum VoiceScope { Automatic, Interactive, External }
 
 public partial class MainWindow
 {
+    // Clips live in the installation's data directory, never in a system temp path or a fixed absolute path.
+    private string VoiceCacheDirectory => Path.Combine(preferences.SpeechDirectory, "cache");
     private CompanionVoice voice = new();
     private DateTime voiceHoldUntil = DateTime.MinValue;
 
@@ -202,7 +205,12 @@ public partial class MainWindow
         });
         Action("打开语音目录", () =>
         {
-            try { Process.Start(new ProcessStartInfo("explorer.exe", preferences.SpeechFolder) { UseShellExecute = true }); }
+            try
+            {
+                var folder = preferences.SpeechDirectory;
+                Directory.CreateDirectory(folder);
+                Process.Start(new ProcessStartInfo("explorer.exe", folder) { UseShellExecute = true });
+            }
             catch (Exception error) { status.Text = "打不开目录：" + error.Message; }
         });
         panel.Children.Add(buttons);
@@ -239,14 +247,14 @@ public partial class MainWindow
         Label("语音包", 16);
         panel.Children.Add(new TextBlock
         {
-            Text = "本程序不附带语音模型与音色。模型、数据集和参考音色请自行下载到语音目录，由本地服务加载；音色的使用授权由使用者自行确认。",
+            Text = "本程序不附带语音模型与音色。模型、数据集和参考音色请自行放进安装目录的语音文件夹，由本地服务加载；音色的使用授权由使用者自行确认。",
             FontSize = 11,
             Foreground = Brushes.SlateGray,
             TextWrapping = TextWrapping.Wrap
         });
         panel.Children.Add(new TextBlock
         {
-            Text = "目录：" + preferences.SpeechFolder + "\n启动：.venv-f5\\Scripts\\python.exe tts_server.py --port 8765",
+            Text = "语音文件夹：" + preferences.SpeechDirectory + "\n（播放缓存写在 cache 子目录；模型与音色由本地服务读取）",
             FontSize = 11,
             Foreground = Brushes.SlateGray,
             TextWrapping = TextWrapping.Wrap,
