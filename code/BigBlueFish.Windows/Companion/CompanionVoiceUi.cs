@@ -139,11 +139,11 @@ public partial class MainWindow
             preferences.SpeechEnabled = value;
             if (!value) StopVoice();
         });
-        Toggle("气泡等语音准备好再出现", preferences.SpeechBubbleWithAudio,
+        Toggle("气泡延迟", preferences.SpeechBubbleWithAudio,
             value => preferences.SpeechBubbleWithAudio = value);
         panel.Children.Add(new TextBlock
         {
-            Text = "开启后先合成再出字，字与声音同步开始，代价是冒泡前多等一两秒；关闭则文字立刻出现，声音随后跟上。",
+            Text = "开启后气泡等到声音真正开始播放才出现，字与声音一起开始；关闭则文字立刻出现，声音随后跟上。",
             FontSize = 11,
             Foreground = Brushes.SlateGray,
             TextWrapping = TextWrapping.Wrap,
@@ -268,7 +268,7 @@ public partial class MainWindow
         Label("朗读范围");
         Toggle("日常关心与问候", preferences.SpeechAutoCare, value => preferences.SpeechAutoCare = value);
         Toggle("手动点击与测试", preferences.SpeechInteraction, value => preferences.SpeechInteraction = value);
-        Toggle("Agent 与 MCP 的 say", preferences.SpeechExternal, value => preferences.SpeechExternal = value);
+        Toggle("Agent 与 MCP", preferences.SpeechExternal, value => preferences.SpeechExternal = value);
 
         Label("语音包", 16);
         panel.Children.Add(new TextBlock
