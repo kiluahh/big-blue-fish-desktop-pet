@@ -288,6 +288,10 @@ internal static partial class Program
         File.WriteAllText("preferences.json",original);
         Check(Math.Abs(clamped.SpeechRate-1.4)<.001,"speech rate clamps to the top of the range");
         Check(Math.Abs(clamped.SpeechPitch-6)<.001,"speech pitch clamps to the top of the range");
+        File.WriteAllText("preferences.json","{\"SpeechPitch\":1.7}");
+        var fine=CompanionPreferences.Read();
+        File.WriteAllText("preferences.json",original);
+        Check(Math.Abs(fine.SpeechPitch-1.7)<1e-9,"speech pitch keeps tenth-of-a-semitone precision");
         Check(clamped.SpeechVolume==0,"speech volume clamps to silence");
         Check(clamped.SpeechNfe==48,"synthesis steps clamp to the top of the range");
         Check(clamped.SpeechEngine=="f5","an unknown engine falls back to the local service");

@@ -243,13 +243,15 @@ public partial class MainWindow
 
         Label("音调（半音，正数更年轻）");
         var pitchText = new TextBlock { Text = preferences.SpeechPitch.ToString("+0.0;-0.0;0.0") + " 半音" };
-        var pitchSlider = new Slider { Minimum = -6, Maximum = 6, Value = preferences.SpeechPitch, TickFrequency = .5, IsSnapToTickEnabled = true };
+        // 0.1 semitone steps: 0.5 was coarse enough to be heard as a jump.
+        var pitchSlider = new Slider { Minimum = -6, Maximum = 6, Value = preferences.SpeechPitch, TickFrequency = .1, IsSnapToTickEnabled = true };
         pitchSlider.ValueChanged += (_, _) =>
         {
             preferences.SpeechPitch = Math.Round(pitchSlider.Value, 1);
             pitchText.Text = preferences.SpeechPitch.ToString("+0.0;-0.0;0.0") + " 半音";
             SaveCompanion();
         };
+        System.Windows.Automation.AutomationProperties.SetName(pitchSlider, "音调");
         panel.Children.Add(pitchText);
         panel.Children.Add(pitchSlider);
 
