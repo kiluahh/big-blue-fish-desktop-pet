@@ -13,21 +13,24 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 | 部分 | 位置 | 职责 |
 | --- | --- | --- |
 | `tts_server.py` | 由使用者放在语音文件夹里运行 | 常驻进程，启动时加载一次 F5 模型，`POST /speak` 返回 wav，`GET /health` 返回可用音色 |
+| `tts_kokoro_server.py` | 同上 | Kokoro v1.1-zh 服务，权重只读本地 `models/kokoro` |
+| `tts_gsv_server.py` | 同上 | GPT-SoVITS v2 服务，权重读 `models/gsv`，没有时退回源码仓库自带的副本 |
 | `CompanionVoice` | `code/BigBlueFish.Windows/Companion/CompanionVoice.cs` | 引擎选择、合成、播放、停止 |
-| `IVoiceEngine` | 同上 | `SystemVoiceEngine`（系统语音）与 `F5VoiceEngine`（HTTP）两个实现 |
+| `IVoiceEngine` | 同上 | `SystemVoiceEngine`（系统语音）与 `F5VoiceEngine`（HTTP，三个本地引擎共用）两个实现 |
 | `IAudioSink` | 同上 | 播放接缝；正式实现用 WPF `MediaPlayer`，测试替换成记录器 |
 
-不选 NAudio 的原因：仓库用 `RestoreLockedMode`，另有三份 `packages.lock.json`（常规 / Vision / Safe），加依赖要同时重新生成三份锁文件；`MediaPlayer` 已能满足音量、停止、失败事件。
+不选 NAudio 的原因：仓库用 `RestoreLockedMode`，另有三份 `packages.lock.json`（常规 / Vision / Safe），加依赖要同时重新生成三份锁文件；`MediaPlayer` 已能满足音量、停止、失败事件。音量超过 100% 时程序把 16 位 PCM 样本按倍数缩放后交给播放器，因为 `MediaPlayer.Volume` 上限是 1.0。
 
 ## 设置页
 
 设置窗口新增第 5 页「语音朗读」：
 
-- 总开关、引擎（F5 / 系统语音）、音色（从 `/health` 拉取）、语速 0.7–1.4、音量、朗读范围（日常关心 / 手动测试 / Agent 与 MCP 的 `say`）
-- 状态行显示服务是否连通，试听按钮，打开语音目录按钮
-- 明确写出「本程序不附带语音模型与音色」
+- 总开关、气泡延迟、引擎（F5 / Kokoro / GPT-SoVITS / 系统语音）、显卡加速开关、音色（F5 与 Kokoro 从 `/health` 拉取；GPT-SoVITS 自己挑参考音色，不显示选择器）、语速 0.7–1.4、音调 ±6 半音（0.1 半音一档）、合成步数 8–40、音量 0–200%
+- 状态行显示服务是否连通，检测服务、试听、打开语音目录按钮
+- 朗读范围：日常关心与问候 / 手动点击与测试 / Agent 与 MCP
+- 「语音模型」区块按引擎列出体积、许可、就绪状态，可单独下载、取消、删除
 
-`preferences.json` 新增九个键：`SpeechEnabled`、`SpeechEngine`、`SpeechVoice`、`SpeechRate`、`SpeechVolume`、`SpeechNfe`、`SpeechEndpoint`、`SpeechFolder`、`SpeechAutoCare` / `SpeechInteraction` / `SpeechExternal`（后三个是范围开关），另有 `SpeechBubbleWithAudio`。
+`preferences.json` 新增 `SpeechEnabled`、`SpeechEngine`、`SpeechVoice`、`SpeechRate`、`SpeechPitch`、`SpeechVolume`、`SpeechNfe`、`SpeechUseGpu`、`SpeechEndpoint` / `SpeechEndpointKokoro` / `SpeechEndpointGsv`、`SpeechFolder`、`SpeechAutoCare` / `SpeechInteraction` / `SpeechExternal`、`SpeechBubbleWithAudio`。
 
 ## 文件路径
 
@@ -41,11 +44,21 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 
 ## 内置代码与权重下载
 
-合成代码（`tts_server.py`、`f5_tts_run.py`）作为嵌入资源随程序发布，启用语音或开始下载时释放到语音文件夹；它们是我们自己的脚本，F5-TTS 本身是 MIT。**权重不进安装包**：模型仓库的许可为 CC BY-NC 4.0，只允许非商用，且体积 1.32 GB。
+三个合成脚本作为嵌入资源随程序发布，开始下载时释放到语音文件夹；它们是我们自己的脚本，三个引擎本身分别是 MIT / Apache-2.0 / MIT。**权重不进安装包**：体积大，许可证也各不相同（见下表），按需下载既减小安装包，也把许可责任留给使用者。
 
-设置页「语音模型」区块负责这件事：显示已下载字节数，按钮从 HuggingFace 下载四个文件（`model_1250000.safetensors`、`vocab.txt`、vocos 的 `pytorch_model.bin` 与 `config.yaml`），失败自动换 `hf-mirror.com`，支持断点续传与取消，按文件大小校验完整性。下载完成后 `tts_server.py --models-dir <语音文件夹>\models` 直接读本地权重，不再访问网络。
+设置页「语音模型」为每个引擎列一条，互不影响：
 
-运行仍需要 Python 3.10–3.12 与 `pip install f5-tts`，这一点写在页面说明里，程序不做自动安装。
+| 引擎 | 目录 | 体积 | 许可 | 文件 |
+| --- | --- | --- | --- | --- |
+| F5-TTS v1 Base | `<语音文件夹>\models\f5` | 1.31 GB | CC BY-NC 4.0（仅非商业） | `model_1250000.safetensors`、`vocab.txt`、`vocos\pytorch_model.bin`、`vocos\config.yaml` |
+| Kokoro v1.1-zh | `<语音文件夹>\models\kokoro` | 316 MB | Apache-2.0 | `config.json`、`kokoro-v1_1-zh.pth`、`voices\zf_*.pt`（8 个音色） |
+| GPT-SoVITS v2 | `<语音文件夹>\models\gsv` | 1.03 GB | MIT | v2 的 s1/s2G 权重、`chinese-hubert-base`、`chinese-roberta-wwm-ext-large` |
+
+下载从 HuggingFace 直连，失败自动换 `hf-mirror.com`；支持断点续传（Range）、取消、按精确字节数校验，完成后可单独删除某个引擎的目录。界面显示百分比、速度与剩余时间。三个脚本都会先找 `models\<engine>`，找不到才退回旧行为（F5 用 HuggingFace 缓存，GPT-SoVITS 用源码仓库自带的 `pretrained_models`），所以本地已有权重的开发目录不会被这条规则破坏。
+
+F5 的权重是 CC BY-NC 4.0，只允许非商业用途；本项目的角色素材同样是 CC BY 协议、非商业使用，二者场景一致，因此保留 F5 作为默认引擎。Kokoro 用 Apache-2.0 的 v1.1-zh 权重，本地加载后不再访问 HuggingFace。GPT-SoVITS 的权重是 MIT，但还需要源码 `vendor\GPT-SoVITS`、它自己的 Python 依赖和参考音频，属于高级用法。
+
+运行仍需要 Python 3.10–3.12 与对应依赖（`pip install f5-tts` / `pip install kokoro soundfile numpy librosa`），这一点写在页面说明里，程序不做自动安装。
 
 ## 音调
 
@@ -69,8 +82,9 @@ F5 模型本身没有音调参数。`/speak` 增加 `pitch`（半音，−12–1
 
 ## 验证
 
-- `AnimationUiVerification --speech-audio`：16 项，覆盖开关、引擎调用次数、音量透传、驻留延长、范围开关、停止、设置归一化。用假引擎与假播放器，CI 无声卡也能跑。
-- 实机：启动 `tts_server.py`，走一次 `say`，服务端记录 22 字 → 6.76 秒音频 / 1.95 秒合成，气泡正常显示，临时 wav 在停止后清理。
+- `AnimationUiVerification --speech-audio`：52 项。覆盖开关、引擎调用次数、音量透传、驻留延长、范围开关、停止、设置归一化、气泡延迟，以及三个模型清单的体积求和、目录映射、缺文件/尺寸不符判定与删除。用假引擎与假播放器，CI 无声卡也能跑。
+- `AnimationUiVerification --speech-download <engine> <folder>`：手动模式，走真实的 HTTP 下载，验证续传与校验；不参与常规测试。
+- 实机：三个服务都启动过一次，`/health` 与 `/speak` 各跑通，Kokoro 本地权重 316 MB、合成 0.5 秒；GPT-SoVITS 本地权重 1.03 GB、合成 6.5 秒；F5 仍从缓存加载。
 
 ## 非目标
 

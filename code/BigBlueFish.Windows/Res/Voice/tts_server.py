@@ -218,7 +218,12 @@ def main(argv: list[str] | None = None) -> int:
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    Handler.synthesizer = Synthesizer(args.model, device, args.models_dir)
+    # The pet downloads the weights into models/f5; use them when present so no network is needed.
+    models_dir = args.models_dir
+    if models_dir is None and (ROOT / "models" / "f5").exists():
+        models_dir = ROOT / "models" / "f5"
+
+    Handler.synthesizer = Synthesizer(args.model, device, models_dir)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"[tts] 监听 http://{args.host}:{args.port}  音色 {len(list_voices())} 个", flush=True)
     try:

@@ -16,6 +16,7 @@
                     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Body" Property="Background" Value="#DCEAFF"/></Trigger>
                     <Trigger Property="IsPressed" Value="True"><Setter TargetName="Body" Property="Background" Value="#C9DDFC"/></Trigger>
                     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Body" Property="BorderBrush" Value="#5478BD"/></Trigger>
+                    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
                 </ControlTemplate.Triggers>
             </ControlTemplate></Setter.Value>
         </Setter>

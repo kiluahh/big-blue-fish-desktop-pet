@@ -315,6 +315,39 @@ internal static partial class Program
         Check(clamped.SpeechEngine=="f5","an unknown engine falls back to the local service");
         Check(clamped.SpeechEndpoint=="http://127.0.0.1:8765","a non-http endpoint falls back to the default");
         Check(clamped.SpeechDirectory==Path.Combine(Environment.CurrentDirectory,"voice"),"the voice folder defaults to the installation data directory");
+
+        // Model downloads: one folder per engine, exact sizes drive both progress and the ready state.
+        var scratch=Path.Combine(Environment.CurrentDirectory,"pack-test");
+        if(Directory.Exists(scratch))Directory.Delete(scratch,true);
+        Check(CompanionVoicePacks.All.Length==3,"every engine has a downloadable model pack");
+        Check(CompanionVoicePacks.ForEngine("gsv")==CompanionVoicePacks.GsvPack,"gsv maps to its own pack");
+        Check(CompanionVoicePacks.ForEngine("system")==null,"the system voice needs no weights");
+        Check(CompanionVoicePacks.F5Pack.Folder(scratch)==Path.Combine(scratch,"models","f5"),"weights land in models/<engine>");
+        foreach(var pack in CompanionVoicePacks.All)
+        {
+            Check(pack.TotalBytes==pack.Files.Sum(file=>file.Size),"pack size is the sum of its files: "+pack.Id);
+            Check(!pack.IsInstalled(scratch),"an empty folder is not an installed pack: "+pack.Id);
+            Check(pack.Files.All(file=>file.Url.StartsWith("https://",StringComparison.Ordinal)),"every file has an https source: "+pack.Id);
+        }
+        var probe=new VoicePack("probe","Probe","MIT","",Array.Empty<string>(),[
+            new("a.bin","https://example.com/a.bin",10),
+            new(Path.Combine("sub","b.bin"),"https://example.com/b.bin",5)]);
+        Directory.CreateDirectory(probe.Folder(scratch));
+        File.WriteAllBytes(probe.PathOf(scratch,probe.Files[0]),new byte[10]);
+        Check(probe.Missing(scratch)==1,"a missing file keeps a pack incomplete");
+        Check(probe.InstalledBytes(scratch)==10,"only complete files count as installed");
+        Directory.CreateDirectory(Path.GetDirectoryName(probe.PathOf(scratch,probe.Files[1]))!);
+        File.WriteAllBytes(probe.PathOf(scratch,probe.Files[1]),new byte[4]);
+        Check(probe.Missing(scratch)==1,"a short file keeps a pack incomplete");
+        File.WriteAllBytes(probe.PathOf(scratch,probe.Files[1]),new byte[5]);
+        Check(probe.IsInstalled(scratch),"all files at the right size make a pack ready");
+        probe.Delete(scratch);
+        Check(!Directory.Exists(probe.Folder(scratch)),"delete removes only that pack folder");
+        Check(Directory.Exists(scratch),"delete keeps the shared models folder");
+        var resources=typeof(MainWindow).Assembly.GetManifestResourceNames();
+        foreach(var script in CompanionVoicePacks.Scripts)
+            Check(resources.Any(name=>name.EndsWith("."+script,StringComparison.Ordinal)),"the "+script+" script ships inside the app");
+        Directory.Delete(scratch,true);
         Console.WriteLine($"Speech: {checks} voice pipeline checks passed.");
     }
     sealed class RecordingSink:IAudioSink
@@ -341,6 +374,23 @@ internal static partial class Program
         try
         {
             string sandbox=Path.GetFullPath(args[0]);Directory.CreateDirectory(sandbox);
+            // Manual check for the real downloader: --speech-download <engine> <folder>.
+            if(args.Contains("--speech-download"))
+            {
+                var at=Array.IndexOf(args,"--speech-download");
+                var pack=CompanionVoicePacks.ForEngine(args[at+1]);
+                if(pack==null){Console.WriteLine("unknown engine: "+args[at+1]);return 2;}
+                var folder=Path.GetFullPath(args[at+2]);Directory.CreateDirectory(folder);
+                var watch=Stopwatch.StartNew();var last=-1;
+                var progress=new Progress<(long Done,long Total,string File)>(p=>
+                {
+                    var percent=p.Total==0?100:(int)(p.Done*100/p.Total);
+                    if(percent!=last){last=percent;Console.WriteLine($"{percent}% {p.Done}/{p.Total} {p.File}");}
+                });
+                CompanionVoicePacks.InstallAsync(pack,folder,progress,System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+                Console.WriteLine($"installed={pack.IsInstalled(folder)} bytes={pack.InstalledBytes(folder)} expected={pack.TotalBytes} elapsed={watch.Elapsed.TotalSeconds:0.0}s");
+                return pack.IsInstalled(folder)?0:1;
+            }
             var app=new VerificationApp();app.InitializeComponent();typeof(Application).GetField("_startupUri",BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(app,null);app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
             Directory.SetCurrentDirectory(sandbox);
             if(args.Contains("--menus"))

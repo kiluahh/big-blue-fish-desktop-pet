@@ -313,66 +313,170 @@ public partial class MainWindow
         Toggle("Agent 与 MCP", preferences.SpeechExternal, value => preferences.SpeechExternal = value);
 
         Label("语音模型", 16);
-        static string Size(long bytes) => bytes >= 1 << 30 ? $"{bytes / 1024.0 / 1024 / 1024:0.00} GB" : $"{bytes / 1024.0 / 1024:0.0} MB";
-        var packStatus = new TextBlock { Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap };
-        var packBar = new ProgressBar { Height = 6, Margin = new Thickness(0, 6, 0, 4), Visibility = Visibility.Collapsed };
-        void RefreshPack()
+        static string Size(long bytes) => bytes >= 1L << 30 ? $"{bytes / 1024.0 / 1024 / 1024:0.00} GB" : $"{bytes / 1024.0 / 1024:0.0} MB";
+        static string Span(TimeSpan time) => time.TotalHours >= 1
+            ? $"{(int)time.TotalHours} 小时 {time.Minutes} 分"
+            : time.TotalMinutes >= 1 ? $"{(int)time.TotalMinutes} 分 {time.Seconds} 秒" : $"{Math.Max(1, time.Seconds)} 秒";
+
+        panel.Children.Add(new TextBlock
         {
-            var have = CompanionVoicePack.InstalledBytes(preferences.SpeechDirectory);
-            packStatus.Text = (CompanionVoicePack.IsInstalled(preferences.SpeechDirectory) ? "语音模型：已就绪 " : "语音模型：未下载 ")
-                + $"（{Size(have)} / {Size(CompanionVoicePack.TotalBytes)}）";
+            Text = "三个引擎的权重分开下载，各自放进语音文件夹的 models 子目录；支持断点续传，失败自动换 hf-mirror 镜像。",
+            FontSize = 11,
+            Foreground = Brushes.SlateGray,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
+        var folder = preferences.SpeechDirectory;
+        var notes = new System.Collections.Generic.Dictionary<string, string>();
+        var rows = new System.Collections.Generic.List<(VoicePack Pack, TextBlock Status, ProgressBar Bar, Button Action, Button Delete)>();
+        var running = new CancellationTokenSource?[1];
+        string? runningId = null;
+
+        string Describe(VoicePack pack)
+        {
+            var missing = pack.Missing(folder);
+            if (missing == 0) return "已就绪";
+            var have = pack.InstalledBytes(folder);
+            return have == 0 ? "未下载" : $"已下载 {have * 100.0 / pack.TotalBytes:0}%，还差 {missing} 个文件";
         }
-        var packDownload = new CancellationTokenSource?[1];
-        RefreshPack();
-        panel.Children.Add(packStatus);
-        panel.Children.Add(packBar);
-        var packButtons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
-        void PackAction(string text, Action action)
+
+        void Update((VoicePack Pack, TextBlock Status, ProgressBar Bar, Button Action, Button Delete) row)
         {
-            var button = new Button { Content = text, Padding = new Thickness(8), Margin = new Thickness(0, 4, 6, 4) };
-            button.Click += (_, _) => action();
-            packButtons.Children.Add(button);
+            var pack = row.Pack;
+            var active = runningId == pack.Id;
+            var have = pack.InstalledBytes(folder);
+            row.Action.Content = active ? "取消" : "下载";
+            row.Action.IsEnabled = active || (runningId == null && pack.Missing(folder) > 0);
+            // A finished pack offers only "delete"; an untouched one offers only "download".
+            row.Action.Visibility = !active && pack.IsInstalled(folder) ? Visibility.Collapsed : Visibility.Visible;
+            row.Delete.IsEnabled = !active && runningId == null && have > 0;
+            row.Delete.Visibility = have > 0 ? Visibility.Visible : Visibility.Collapsed;
+            row.Bar.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+            row.Status.Text = notes.TryGetValue(pack.Id, out var note) ? note : Describe(pack);
         }
-        PackAction("下载语音模型", () =>
+
+        void UpdateAll() { foreach (var row in rows) Update(row); }
+
+        void Start((VoicePack Pack, TextBlock Status, ProgressBar Bar, Button Action, Button Delete) row)
         {
-            if (packDownload[0] != null) { packStatus.Text = "正在下载，请稍候…"; return; }
-            var cancel = packDownload[0] = new CancellationTokenSource();
-            CompanionVoicePack.ExtractScripts(preferences.SpeechDirectory);
-            packBar.Visibility = Visibility.Visible;
-            var progress = new Progress<(long Done, long Total, string File)>(p =>
+            var pack = row.Pack;
+            notes.Remove(pack.Id);
+            var cancel = running[0] = new CancellationTokenSource();
+            runningId = pack.Id;
+            CompanionVoicePacks.ExtractScripts(folder);
+            row.Bar.Value = 0;
+            var watch = Stopwatch.StartNew();
+            long seen = pack.InstalledBytes(folder);
+            var at = TimeSpan.Zero;
+            var progress = new Progress<(long Done, long Total, string File)>(report =>
             {
-                packBar.Value = Math.Clamp((double)p.Done / Math.Max(p.Total, 1), 0, 1);
-                packStatus.Text = $"正在下载 {Size(p.Done)} / {Size(p.Total)}" + (p.File.Length == 0 ? "" : " · " + p.File);
+                var ratio = Math.Clamp((double)report.Done / Math.Max(report.Total, 1), 0, 1);
+                row.Bar.Value = ratio;
+                var now = watch.Elapsed;
+                var step = now - at;
+                if (step < TimeSpan.FromMilliseconds(400)) return;
+                var speed = (report.Done - seen) / Math.Max(step.TotalSeconds, 0.001);
+                seen = report.Done;
+                at = now;
+                row.Status.Text = $"正在下载 {ratio:P0} · {Size((long)Math.Max(speed, 0))}/s"
+                    + (speed > 0.5 ? " · 剩 " + Span(TimeSpan.FromSeconds((report.Total - report.Done) / speed)) : "")
+                    + (report.File.Length == 0 ? "" : " · " + Path.GetFileName(report.File));
             });
+            UpdateAll();
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await CompanionVoicePack.InstallAsync(preferences.SpeechDirectory, progress, cancel.Token);
-                    await Dispatcher.InvokeAsync(() => { RefreshPack(); status.Text = "语音模型下载完成。运行语音服务后即可使用。"; });
+                    await CompanionVoicePacks.InstallAsync(pack, folder, progress, cancel.Token);
+                    await Dispatcher.InvokeAsync(() => notes[pack.Id] = $"下载完成：{Size(pack.TotalBytes)}。{pack.Start}");
                 }
                 catch (OperationCanceledException)
                 {
-                    await Dispatcher.InvokeAsync(() => { RefreshPack(); status.Text = "已取消下载，下次会接着下。"; });
+                    await Dispatcher.InvokeAsync(() => notes[pack.Id] = "已取消，下次接着下。");
                 }
                 catch (Exception error)
                 {
-                    await Dispatcher.InvokeAsync(() => { RefreshPack(); status.Text = "下载失败：" + error.Message; });
+                    await Dispatcher.InvokeAsync(() => notes[pack.Id] = "下载失败：" + error.Message);
                 }
                 finally
                 {
                     cancel.Dispose();
-                    await Dispatcher.InvokeAsync(() => { packBar.Visibility = Visibility.Collapsed; });
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        running[0] = null;
+                        runningId = null;
+                        UpdateAll();
+                    });
                 }
             });
-        });
-        PackAction("取消下载", () => packDownload[0]?.Cancel());
-        panel.Children.Add(packButtons);
+        }
+
+        void Remove((VoicePack Pack, TextBlock Status, ProgressBar Bar, Button Action, Button Delete) row)
+        {
+            var pack = row.Pack;
+            if (MessageBox.Show(owner, $"删除 {pack.Name} 的权重（{Size(pack.TotalBytes)}）？以后可以重新下载。",
+                    "删除语音模型", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            try
+            {
+                pack.Delete(folder);
+                notes.Remove(pack.Id);
+            }
+            catch (Exception error) { notes[pack.Id] = "删除失败：" + error.Message; }
+            UpdateAll();
+        }
+
+        foreach (var pack in CompanionVoicePacks.All)
+        {
+            var stack = new StackPanel { Margin = new Thickness(0, 6, 0, 8) };
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"{pack.Name} · {Size(pack.TotalBytes)}",
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = pack.Licence + " · " + pack.Start,
+                FontSize = 11,
+                Foreground = Brushes.SlateGray,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 2)
+            });
+            var line = new TextBlock { Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 4) };
+            stack.Children.Add(line);
+            var bar = new ProgressBar { Height = 4, Margin = new Thickness(0, 0, 0, 6), Visibility = Visibility.Collapsed };
+            stack.Children.Add(bar);
+            var rowButtons = new WrapPanel();
+            var action = new Button { Padding = new Thickness(8), Margin = new Thickness(0, 0, 6, 0) };
+            var remove = new Button { Content = "删除", Padding = new Thickness(8) };
+            rowButtons.Children.Add(action);
+            rowButtons.Children.Add(remove);
+            stack.Children.Add(rowButtons);
+            panel.Children.Add(new Border
+            {
+                Child = stack,
+                BorderBrush = Brushes.Gainsboro,
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Padding = new Thickness(0, 2, 0, 4)
+            });
+            var row = (pack, line, bar, action, remove);
+            rows.Add(row);
+            action.Click += (_, _) =>
+            {
+                if (runningId == pack.Id) running[0]?.Cancel();
+                else if (runningId == null) Start(row);
+            };
+            remove.Click += (_, _) => Remove(row);
+        }
+        UpdateAll();
+
         panel.Children.Add(new TextBlock
         {
-            Text = "合成代码已内置，权重从 HuggingFace 下载（可续传、失败自动换镜像）到上面的语音文件夹。"
-                + "权重是 CC BY-NC 4.0：仅限个人非商用；参考音色不随程序分发，请自行准备并确认授权。"
-                + "运行还需要 Python 3.10–3.12 与 pip install f5-tts（带显卡更快）。",
+            Text = "合成代码已内置，下载时释放到语音文件夹。运行还需要 Python 3.10–3.12 与依赖："
+                + "F5 用 pip install f5-tts（带显卡更快）；Kokoro 用 pip install kokoro soundfile numpy librosa；"
+                + "GPT-SoVITS 要把源码放到 voice\\vendor\\GPT-SoVITS 并装它自己的 requirements。"
+                + "参考音色不随程序分发：F5 放 voice\\refs\\kids，GPT-SoVITS 放同名目录，每段 .wav 配一个 .txt。",
             FontSize = 11,
             Foreground = Brushes.SlateGray,
             TextWrapping = TextWrapping.Wrap,
