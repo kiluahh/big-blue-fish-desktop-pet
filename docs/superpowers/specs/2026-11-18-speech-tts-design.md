@@ -39,6 +39,18 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 
 模型、参考音色和 `tts_server.py` 由使用者自己放进这个文件夹（或别的自选目录），程序只按 `SpeechEndpoint` 去连，不猜路径。
 
+## 内置代码与权重下载
+
+合成代码（`tts_server.py`、`f5_tts_run.py`）作为嵌入资源随程序发布，启用语音或开始下载时释放到语音文件夹；它们是我们自己的脚本，F5-TTS 本身是 MIT。**权重不进安装包**：模型仓库的许可为 CC BY-NC 4.0，只允许非商用，且体积 1.32 GB。
+
+设置页「语音模型」区块负责这件事：显示已下载字节数，按钮从 HuggingFace 下载四个文件（`model_1250000.safetensors`、`vocab.txt`、vocos 的 `pytorch_model.bin` 与 `config.yaml`），失败自动换 `hf-mirror.com`，支持断点续传与取消，按文件大小校验完整性。下载完成后 `tts_server.py --models-dir <语音文件夹>\models` 直接读本地权重，不再访问网络。
+
+运行仍需要 Python 3.10–3.12 与 `pip install f5-tts`，这一点写在页面说明里，程序不做自动安装。
+
+## 音调
+
+F5 模型本身没有音调参数。`/speak` 增加 `pitch`（半音，−12–12，界面限制 ±6），服务端在合成后用 `librosa.effects.pitch_shift` 变调，时长不变。实测同一句话 +4 半音：中位基频 349.6 Hz → 398.1 Hz，时长都是 3.744 秒。
+
 ## 时序
 
 语音是异步的，文字不等声音：

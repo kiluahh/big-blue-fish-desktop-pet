@@ -24,7 +24,7 @@ public static class ControlTools
     public static readonly string[] SettingNames = ["ModelEnabled", "GpuEnabled", "PublicInfo", "ForegroundEnabled", "StopModelOnBattery",
         "HideOnFullscreen", "CheckUpdatesOnStartup", "ChatLogShowAll", "WeatherRegionCode", "Scale", "BubbleScale", "SpeechMinMinutes",
         "BubbleDurationIndex", "AnimationIntervalSeconds", "BreakfastHour", "LunchHour", "DinnerHour", "Left", "Top", "LastBrushDate", "StartupEnabled", "PuppetMode", "AgentDailySpeech", "AgentRespondToClick", "AgentRespondToDrag",
-        "SpeechEnabled", "SpeechEngine", "SpeechVoice", "SpeechRate", "SpeechVolume", "SpeechNfe", "SpeechEndpoint", "SpeechAutoCare", "SpeechInteraction", "SpeechExternal", "SpeechBubbleWithAudio"];
+        "SpeechEnabled", "SpeechEngine", "SpeechVoice", "SpeechRate", "SpeechPitch", "SpeechVolume", "SpeechNfe", "SpeechEndpoint", "SpeechAutoCare", "SpeechInteraction", "SpeechExternal", "SpeechBubbleWithAudio"];
     private const string SettingsInput = """
         {"settings":{"type":"object","additionalProperties":false,"description":"按需提供字段；省略的字段保留。字段名区分大小写。AgentEnabled 只读。成功后读取实际值；位置可能因工作区限制调整。","properties":{
           "ModelEnabled":{"type":"boolean","description":"启用内置模型；不限制外部 say。"},
@@ -56,6 +56,7 @@ public static class ControlTools
           "SpeechEngine":{"type":"string","enum":["f5","system"],"description":"f5为本地F5-TTS服务，system为系统自带语音。"},
           "SpeechVoice":{"type":"string","pattern":"^[A-Za-z0-9_.-]{1,64}$","description":"音色标识，取自本地语音服务提供的列表。"},
           "SpeechRate":{"type":"number","minimum":0.7,"maximum":1.4,"description":"语速倍率，1为原速；在合成时生效。"},
+          "SpeechPitch":{"type":"number","minimum":-6,"maximum":6,"description":"音调，单位半音，0为原声；合成后变频，不改变语速。"},
           "SpeechVolume":{"type":"number","minimum":0,"maximum":1,"description":"播放音量，0–1。"},
           "SpeechNfe":{"type":"integer","minimum":8,"maximum":48,"description":"合成采样步数，越大越稳越慢。"},
           "SpeechEndpoint":{"type":"string","pattern":"^https?://","description":"本地语音服务地址，如http://127.0.0.1:8765。"},

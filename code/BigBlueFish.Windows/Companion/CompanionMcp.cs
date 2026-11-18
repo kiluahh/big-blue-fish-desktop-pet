@@ -287,6 +287,7 @@ public partial class MainWindow
                 "BubbleDurationIndex" => Range(0, 7),
                 "SpeechMinMinutes" => item.Value is int minutes && CompanionPreferences.SpeechRanges.Any(r => r.Min == minutes),
                 "SpeechRate" => Range(.7, 1.4),
+                "SpeechPitch" => Range(-6, 6),
                 "SpeechVolume" => Range(0, 1),
                 "SpeechNfe" => Range(8, 48),
                 "SpeechEngine" => item.Value is "f5" or "system",

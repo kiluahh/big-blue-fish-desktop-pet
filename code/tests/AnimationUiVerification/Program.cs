@@ -283,10 +283,11 @@ internal static partial class Program
         prefs.SpeechBubbleWithAudio=false;engine.DelayMilliseconds=0;
 
         var original=File.ReadAllText("preferences.json");
-        File.WriteAllText("preferences.json","{\"SpeechRate\":9,\"SpeechVolume\":-3,\"SpeechNfe\":999,\"SpeechEngine\":\"nope\",\"SpeechEndpoint\":\"ftp://example\"}");
+        File.WriteAllText("preferences.json","{\"SpeechRate\":9,\"SpeechPitch\":99,\"SpeechVolume\":-3,\"SpeechNfe\":999,\"SpeechEngine\":\"nope\",\"SpeechEndpoint\":\"ftp://example\"}");
         var clamped=CompanionPreferences.Read();
         File.WriteAllText("preferences.json",original);
         Check(Math.Abs(clamped.SpeechRate-1.4)<.001,"speech rate clamps to the top of the range");
+        Check(Math.Abs(clamped.SpeechPitch-6)<.001,"speech pitch clamps to the top of the range");
         Check(clamped.SpeechVolume==0,"speech volume clamps to silence");
         Check(clamped.SpeechNfe==48,"synthesis steps clamp to the top of the range");
         Check(clamped.SpeechEngine=="f5","an unknown engine falls back to the local service");

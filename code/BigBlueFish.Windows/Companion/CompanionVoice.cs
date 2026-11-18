@@ -108,6 +108,7 @@ internal sealed class F5VoiceEngine : IVoiceEngine
             text,
             voice = preferences.SpeechVoice,
             speed = preferences.SpeechRate,
+            pitch = preferences.SpeechPitch,
             nfe = preferences.SpeechNfe
         });
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");

@@ -37,6 +37,8 @@
     <EmbeddedResource Include="assets/regions/us-regions.json" />
     <EmbeddedResource Include="assets/regions/world-regions.json" />
     <EmbeddedResource Include="assets/regions/world-countries.json" />
+    <EmbeddedResource Include="Res/Voice/tts_server.py" />
+    <EmbeddedResource Include="Res/Voice/f5_tts_run.py" />
   </ItemGroup>
   <Target Name="EnsureGpuAnimationDecoder" BeforeTargets="PrepareForBuild">
     <Exec Command="powershell.exe -NoProfile -NonInteractive -File &quot;$(MSBuildProjectDirectory)/../../tools/Setup-Gstreamer.ps1&quot;" />

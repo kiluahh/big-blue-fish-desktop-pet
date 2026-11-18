@@ -53,6 +53,7 @@ internal sealed class CompanionPreferences
     public string SpeechEngine { get; set; } = "f5";
     public string SpeechVoice { get; set; } = "kid_005614";
     public double SpeechRate { get; set; } = 1.0;
+    public double SpeechPitch { get; set; } = 0;
     public double SpeechVolume { get; set; } = 1.0;
     public int SpeechNfe { get; set; } = 24;
     public string SpeechEndpoint { get; set; } = "http://127.0.0.1:8765";
@@ -133,6 +134,7 @@ internal sealed class CompanionPreferences
                     s.SpeechEngine = string.Equals(s.SpeechEngine, "system", StringComparison.OrdinalIgnoreCase) ? "system" : "f5";
                     s.SpeechVoice = string.IsNullOrWhiteSpace(s.SpeechVoice) ? "kid_005614" : s.SpeechVoice;
                     s.SpeechRate = double.IsFinite(s.SpeechRate) ? Math.Clamp(s.SpeechRate, .7, 1.4) : 1;
+                    s.SpeechPitch = double.IsFinite(s.SpeechPitch) ? Math.Clamp(s.SpeechPitch, -6, 6) : 0;
                     s.SpeechVolume = double.IsFinite(s.SpeechVolume) ? Math.Clamp(s.SpeechVolume, 0, 1) : 1;
                     s.SpeechNfe = Math.Clamp(s.SpeechNfe, 8, 48);
                     s.SpeechEndpoint = Uri.TryCreate(s.SpeechEndpoint, UriKind.Absolute, out var endpoint)

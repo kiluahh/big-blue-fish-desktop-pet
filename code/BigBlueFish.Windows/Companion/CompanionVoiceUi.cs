@@ -241,6 +241,18 @@ public partial class MainWindow
         panel.Children.Add(rate);
         panel.Children.Add(rateSlider);
 
+        Label("音调（半音，正数更年轻）");
+        var pitchText = new TextBlock { Text = preferences.SpeechPitch.ToString("+0.0;-0.0;0.0") + " 半音" };
+        var pitchSlider = new Slider { Minimum = -6, Maximum = 6, Value = preferences.SpeechPitch, TickFrequency = .5, IsSnapToTickEnabled = true };
+        pitchSlider.ValueChanged += (_, _) =>
+        {
+            preferences.SpeechPitch = Math.Round(pitchSlider.Value, 1);
+            pitchText.Text = preferences.SpeechPitch.ToString("+0.0;-0.0;0.0") + " 半音";
+            SaveCompanion();
+        };
+        panel.Children.Add(pitchText);
+        panel.Children.Add(pitchSlider);
+
         Label("合成步数（越低越快，音质略降）");
         var nfe = new TextBlock { Text = preferences.SpeechNfe + "（24 时每句约 2 秒，12–16 快将近一半）" };
         var nfeSlider = new Slider { Minimum = 8, Maximum = 40, Value = preferences.SpeechNfe, TickFrequency = 2, IsSnapToTickEnabled = true };
@@ -270,21 +282,78 @@ public partial class MainWindow
         Toggle("手动点击与测试", preferences.SpeechInteraction, value => preferences.SpeechInteraction = value);
         Toggle("Agent 与 MCP", preferences.SpeechExternal, value => preferences.SpeechExternal = value);
 
-        Label("语音包", 16);
-        panel.Children.Add(new TextBlock
+        Label("语音模型", 16);
+        static string Size(long bytes) => bytes >= 1 << 30 ? $"{bytes / 1024.0 / 1024 / 1024:0.00} GB" : $"{bytes / 1024.0 / 1024:0.0} MB";
+        var packStatus = new TextBlock { Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap };
+        var packBar = new ProgressBar { Height = 6, Margin = new Thickness(0, 6, 0, 4), Visibility = Visibility.Collapsed };
+        void RefreshPack()
         {
-            Text = "本程序不附带语音模型与音色。模型、数据集和参考音色请自行放进安装目录的语音文件夹，由本地服务加载；音色的使用授权由使用者自行确认。",
-            FontSize = 11,
-            Foreground = Brushes.SlateGray,
-            TextWrapping = TextWrapping.Wrap
+            var have = CompanionVoicePack.InstalledBytes(preferences.SpeechDirectory);
+            packStatus.Text = (CompanionVoicePack.IsInstalled(preferences.SpeechDirectory) ? "语音模型：已就绪 " : "语音模型：未下载 ")
+                + $"（{Size(have)} / {Size(CompanionVoicePack.TotalBytes)}）";
+        }
+        var packDownload = new CancellationTokenSource?[1];
+        RefreshPack();
+        panel.Children.Add(packStatus);
+        panel.Children.Add(packBar);
+        var packButtons = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+        void PackAction(string text, Action action)
+        {
+            var button = new Button { Content = text, Padding = new Thickness(8), Margin = new Thickness(0, 4, 6, 4) };
+            button.Click += (_, _) => action();
+            packButtons.Children.Add(button);
+        }
+        PackAction("下载语音模型", () =>
+        {
+            if (packDownload[0] != null) { packStatus.Text = "正在下载，请稍候…"; return; }
+            var cancel = packDownload[0] = new CancellationTokenSource();
+            CompanionVoicePack.ExtractScripts(preferences.SpeechDirectory);
+            packBar.Visibility = Visibility.Visible;
+            var progress = new Progress<(long Done, long Total, string File)>(p =>
+            {
+                packBar.Value = Math.Clamp((double)p.Done / Math.Max(p.Total, 1), 0, 1);
+                packStatus.Text = $"正在下载 {Size(p.Done)} / {Size(p.Total)}" + (p.File.Length == 0 ? "" : " · " + p.File);
+            });
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await CompanionVoicePack.InstallAsync(preferences.SpeechDirectory, progress, cancel.Token);
+                    await Dispatcher.InvokeAsync(() => { RefreshPack(); status.Text = "语音模型下载完成。运行语音服务后即可使用。"; });
+                }
+                catch (OperationCanceledException)
+                {
+                    await Dispatcher.InvokeAsync(() => { RefreshPack(); status.Text = "已取消下载，下次会接着下。"; });
+                }
+                catch (Exception error)
+                {
+                    await Dispatcher.InvokeAsync(() => { RefreshPack(); status.Text = "下载失败：" + error.Message; });
+                }
+                finally
+                {
+                    cancel.Dispose();
+                    await Dispatcher.InvokeAsync(() => { packBar.Visibility = Visibility.Collapsed; });
+                }
+            });
         });
+        PackAction("取消下载", () => packDownload[0]?.Cancel());
+        panel.Children.Add(packButtons);
         panel.Children.Add(new TextBlock
         {
-            Text = "语音文件夹：" + preferences.SpeechDirectory + "\n（播放缓存写在 cache 子目录；模型与音色由本地服务读取）",
+            Text = "合成代码已内置，权重从 HuggingFace 下载（可续传、失败自动换镜像）到上面的语音文件夹。"
+                + "权重是 CC BY-NC 4.0：仅限个人非商用；参考音色不随程序分发，请自行准备并确认授权。"
+                + "运行还需要 Python 3.10–3.12 与 pip install f5-tts（带显卡更快）。",
             FontSize = 11,
             Foreground = Brushes.SlateGray,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 2)
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "语音文件夹：" + preferences.SpeechDirectory,
+            FontSize = 11,
+            Foreground = Brushes.SlateGray,
+            TextWrapping = TextWrapping.Wrap
         });
 
         _ = RefreshAsync();
