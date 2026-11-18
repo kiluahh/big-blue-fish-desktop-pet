@@ -25,6 +25,8 @@ internal interface IVoiceEngine
 internal interface IAudioSink : IDisposable
 {
     bool IsPlaying { get; }
+    // Raised once the clip is actually audible, so the text can start with the voice.
+    event Action? Started;
     void Play(byte[] wav, double volume);
     void Stop();
 }
@@ -40,9 +42,12 @@ internal sealed class MediaAudioSink : IAudioSink
     {
         this.directory = directory ?? (() => Path.GetTempPath());
         player.Volume = 1;
+        player.MediaOpened += (_, _) => Started?.Invoke();
         player.MediaEnded += (_, _) => { };
         player.MediaFailed += (_, _) => Stop();
     }
+
+    public event Action? Started;
 
     public bool IsPlaying { get; private set; }
 
@@ -167,6 +172,7 @@ internal sealed class CompanionVoice : IDisposable
     private F5VoiceEngine f5 = new();
     private readonly SystemVoiceEngine system = new();
     private CancellationTokenSource? speaking;
+    private Action? startedHandler;
     private double seconds;
 
     public CompanionVoice() : this(new MediaAudioSink(), null) { }
@@ -206,9 +212,21 @@ internal sealed class CompanionVoice : IDisposable
         }
     }
 
-    internal void Play(VoiceClip clip, CompanionPreferences preferences)
+    internal void Play(VoiceClip clip, CompanionPreferences preferences, Action? started = null)
     {
-        if (clip.Wav.Length == 0) return;
+        if (clip.Wav.Length == 0)
+        {
+            started?.Invoke();
+            return;
+        }
+        if (started == null)
+        {
+            sink.Play(clip.Wav, preferences.SpeechVolume);
+            return;
+        }
+        Action handler = () => { sink.Started -= startedHandler!; startedHandler = null; started(); };
+        startedHandler = handler;
+        sink.Started += handler;
         sink.Play(clip.Wav, preferences.SpeechVolume);
     }
 
@@ -217,6 +235,7 @@ internal sealed class CompanionVoice : IDisposable
     internal void Stop()
     {
         try { speaking?.Cancel(); } catch { }
+        if (startedHandler != null) { sink.Started -= startedHandler; startedHandler = null; }
         sink.Stop();
     }
 

@@ -275,6 +275,11 @@ internal static partial class Program
         Pump(700);
         Check(bubbleText.Text.Contains("延迟出字"),"bubble delay reveals the text once the clip is ready");
         Check(engine.Calls==callsBefore+1,"bubble delay synthesizes exactly once");
+        // Streaming previews must not run ahead of the clip either.
+        Invoke(Read(w,"speech"),"Cancel");
+        bubbleText.Text="";
+        Invoke(w,"ShowCompanionPartial","流式预览不该出现。",(long?)null,false);
+        Check(bubbleText.Text.Length==0,"streaming previews stay hidden while the bubble waits for voice");
         prefs.SpeechBubbleWithAudio=false;engine.DelayMilliseconds=0;
 
         var original=File.ReadAllText("preferences.json");
@@ -292,7 +297,8 @@ internal static partial class Program
     sealed class RecordingSink:IAudioSink
     {
         public int Plays,Stops;public double LastVolume=-1;public bool IsPlaying{get;private set;}
-        public void Play(byte[] wav,double volume){Plays++;LastVolume=volume;IsPlaying=true;}
+        public event Action? Started;
+        public void Play(byte[] wav,double volume){Plays++;LastVolume=volume;IsPlaying=true;Started?.Invoke();}
         public void Stop(){Stops++;IsPlaying=false;}
         public void Dispose(){}
     }

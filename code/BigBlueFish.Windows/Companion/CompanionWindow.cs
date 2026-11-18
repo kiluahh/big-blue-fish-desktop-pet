@@ -533,12 +533,20 @@ public partial class MainWindow
         bubbleIsModelReply = true;
         bubbleUntil = DateTime.MaxValue;
         StopVoice();
+        // With the voice holding the bubble, streamed previews would run seconds ahead of the clip.
+        if (HoldsBubbleForVoice(agentTriggered ? VoiceScope.External : VoiceScope.Automatic)) return;
         speech.ShowPartial(text);
     }
 
     private void FinishCompanionPartial(string text, bool agentTriggered = false, VoiceScope scope = VoiceScope.Automatic)
     {
         DiagnosticLog.Write(DiagnosticEvent.BubbleShown, kind: "local", chars: text.Length);
+        if (HoldsBubbleForVoice(scope))
+        {
+            if (chatLog != null) chatLog.Add(false, text);
+            _ = SpeakThenShowAsync(text);
+            return;
+        }
         ShowCompanionPartial(text, agentTriggered: agentTriggered);
         ResetBubbleDeadline();
         if (speech.FullText == text) chatLog.Add(false, text);

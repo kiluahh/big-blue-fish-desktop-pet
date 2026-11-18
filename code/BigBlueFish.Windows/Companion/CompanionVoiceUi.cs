@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace BigBlueFish.Windows;
 
@@ -61,11 +62,24 @@ public partial class MainWindow
             return;
         }
         voiceHoldUntil = DateTime.UtcNow.AddSeconds(clip.Seconds + 2);
-        speech.Show(text, true, clip.Seconds);
-        voice.Play(clip, preferences);
+        // Text starts with the audible clip, not with the call that opens the player.
+        var revealed = false;
+        var fallback = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+        void Reveal()
+        {
+            if (revealed) return;
+            revealed = true;
+            fallback.Stop();
+            speech.Show(text, true, clip.Seconds);
+        }
+        fallback.Tick += (_, _) => Reveal();
+        fallback.Start();
+        voice.Play(clip, preferences, Reveal);
         DiagnosticLog.Write(DiagnosticEvent.SpeechCompleted, kind: "voice", chars: text.Length,
             elapsedMs: (DateTime.UtcNow - started).TotalMilliseconds);
     }
+
+    private bool HoldsBubbleForVoice(VoiceScope scope) => Speaks(scope) && preferences.SpeechBubbleWithAudio;
 
     private async Task SpeakAsync(string text)
     {
