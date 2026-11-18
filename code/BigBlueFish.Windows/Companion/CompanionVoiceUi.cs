@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -17,6 +18,8 @@ public partial class MainWindow
     // Clips live in the installation's data directory, never in a system temp path or a fixed absolute path.
     private string VoiceCacheDirectory => Path.Combine(preferences.SpeechDirectory, "cache");
     private CompanionVoice voice = new();
+    // Owns the local python service: started when speech needs it, killed on exit. Replaced in UI tests.
+    private IVoiceServiceHost? voiceService = new CompanionVoiceService();
     private DateTime voiceHoldUntil = DateTime.MinValue;
 
     private bool Speaks(VoiceScope scope) => preferences.SpeechEnabled && scope switch
@@ -25,6 +28,36 @@ public partial class MainWindow
         VoiceScope.Interactive => preferences.SpeechInteraction,
         _ => preferences.SpeechExternal
     };
+
+    // The local service belongs to the pet: it is started in the background and taken down on exit.
+    private void EnsureVoiceService() => _ = EnsureVoiceServiceAsync();
+
+    private async Task<VoiceServiceState> EnsureVoiceServiceAsync(CancellationToken token = default)
+    {
+        var host = voiceService;
+        if (host == null) return VoiceServiceState.Disabled;
+        try { return await host.EnsureStartedAsync(preferences, token).ConfigureAwait(true); }
+        catch (Exception error)
+        {
+            DiagnosticLog.Write(DiagnosticEvent.VoiceServiceFailed, kind: "voice", state: "failed", error: error);
+            return VoiceServiceState.Failed;
+        }
+    }
+
+    private void StopVoiceService() => voiceService?.Stop();
+
+    private string VoiceServiceSummary(VoiceServiceState state, string endpoint)
+    {
+        var pid = voiceService?.Pid;
+        return state switch
+        {
+            VoiceServiceState.Running => $"服务由程序启动{(pid == null ? "" : $"（PID {pid}）")}，已连接（{endpoint}）",
+            VoiceServiceState.External => $"外部服务已连接（{endpoint}）",
+            VoiceServiceState.Starting => "正在启动语音服务…（模型加载需要十几秒）",
+            VoiceServiceState.Failed => "语音服务启动失败：" + (voiceService?.Detail is { Length: > 0 } detail ? detail : "原因未知"),
+            _ => "语音朗读已关闭"
+        };
+    }
 
     /// <summary>Shows the bubble, then speaks it if the voice packs allow it. Text never waits for audio unless asked.</summary>
     private void ShowVoiceText(string text, VoiceScope scope = VoiceScope.Automatic)
@@ -137,7 +170,8 @@ public partial class MainWindow
         Toggle("启用语音朗读", preferences.SpeechEnabled, value =>
         {
             preferences.SpeechEnabled = value;
-            if (!value) StopVoice();
+            if (!value) { StopVoice(); StopVoiceService(); }
+            else EnsureVoiceService();
         });
         Toggle("气泡延迟", preferences.SpeechBubbleWithAudio,
             value => preferences.SpeechBubbleWithAudio = value);
@@ -188,6 +222,33 @@ public partial class MainWindow
             status.Text = value ? "已切到显卡：下一句会让语音服务重新加载模型。" : "已切到 CPU：下一句会让语音服务重新加载模型。";
         });
 
+        Label("本地服务");
+        var python = new TextBox
+        {
+            Text = preferences.SpeechPython,
+            Margin = new Thickness(0, 0, 0, 2),
+            ToolTip = "留空则依次查找语音文件夹里的 .venv、venv、python.exe，最后用 PATH 里的 python。"
+        };
+        void SavePython() { preferences.SpeechPython = python.Text.Trim(); SaveCompanion(); }
+        python.LostFocus += (_, _) => SavePython();
+        python.KeyDown += (_, e) => { if (e.Key == Key.Enter) SavePython(); };
+        panel.Children.Add(python);
+        Toggle("跟着程序启动和退出（退出时一并关闭）", preferences.SpeechAutoStart, value =>
+        {
+            preferences.SpeechAutoStart = value;
+            if (value) EnsureVoiceService(); else StopVoiceService();
+            _ = RefreshAsync();
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "程序自己拉起本机的语音服务，退出时连同子进程一起收走，显存和内存随之释放；"
+                + "如果这个地址上已经有服务在跑，就只连接、不接管。",
+            FontSize = 11,
+            Foreground = Brushes.SlateGray,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+
         engines.SelectionChanged += (_, _) =>
         {
             if (engines.SelectedIndex < 0 || engines.SelectedIndex >= engineIds.Count) return;
@@ -208,21 +269,23 @@ public partial class MainWindow
         async Task RefreshAsync()
         {
             var endpoint = preferences.EndpointFor(preferences.SpeechEngine);
+            status.Text = "正在检测语音服务…";
+            var state = await EnsureVoiceServiceAsync(fetched.Token);
+            if (fetched.IsCancellationRequested) return;
             var ok = await voice.ProbeAsync(endpoint, fetched.Token);
             if (fetched.IsCancellationRequested) return;
             if (!ok)
             {
-                status.Text = preferences.SpeechEngine switch
-                {
-                    "kokoro" => "未连接 Kokoro 服务：运行 tts_kokoro_server.py --port 8766。",
-                    "gsv" => "未连接 GPT-SoVITS 服务：运行 tts_gsv_server.py --port 8767。",
-                    "system" => "系统语音不需要本地服务。",
-                    _ => "未连接 F5 服务：运行 tts_server.py --port 8765。"
-                };
+                status.Text = state == VoiceServiceState.Failed
+                    ? "语音服务启动失败：" + (voiceService?.Detail is { Length: > 0 } detail ? detail : "原因未知")
+                    : preferences.SpeechEngine == "system" ? "系统语音不需要本地服务。"
+                    : preferences.SpeechAutoStart ? "语音服务没有应答：" + endpoint
+                    : "自动启动已关闭：请手动运行 " + (VoiceServicePlan.ScriptFor(preferences.SpeechEngine) ?? "语音服务") + "。";
                 return;
             }
             var listed = await VoiceIdsAsync(endpoint, fetched.Token);
-            status.Text = $"语音服务已连接（{endpoint}）" + (listed.Count == 0 ? "" : $"，可用音色 {listed.Count} 个");
+            if (fetched.IsCancellationRequested) return;
+            status.Text = VoiceServiceSummary(state, endpoint) + (listed.Count == 0 ? "" : $"，可用音色 {listed.Count} 个");
             if (listed.Count > 0)
             {
                 voices.Items.Clear();
@@ -233,18 +296,32 @@ public partial class MainWindow
             }
         }
 
-        Action("检测服务", () => _ = RefreshAsync());
-        Action("试听", () =>
+        async Task PlaySampleAsync()
         {
             if (!preferences.SpeechEnabled) { status.Text = "先打开上面的开关。"; return; }
+            var endpoint = preferences.EndpointFor(preferences.SpeechEngine);
+            status.Text = "正在准备语音服务…";
+            var state = await EnsureVoiceServiceAsync();
+            if (state == VoiceServiceState.Failed) { status.Text = "语音服务启动失败：" + (voiceService?.Detail ?? ""); return; }
+            if (!await voice.ProbeAsync(endpoint, fetched.Token)) { status.Text = "未连接语音服务：" + endpoint; return; }
+            status.Text = "正在合成…";
             var token = voice.BeginSpeaking();
-            _ = Task.Run(async () =>
-            {
-                var clip = await voice.SynthesizeAsync("主人，我是鱼鱼，这样说话好听吗？", preferences, token);
-                if (clip == null) { await Dispatcher.InvokeAsync(() => status.Text = "合成失败：检查语音服务是否在运行。"); return; }
-                await Dispatcher.InvokeAsync(() => voice.Play(clip, preferences));
-            });
-        });
+            var clip = await Task.Run(() => voice.SynthesizeAsync("主人，我是鱼鱼，这样说话好听吗？", preferences, token));
+            if (clip == null) { status.Text = "合成失败：检查语音服务是否在运行。"; return; }
+            voice.Play(clip, preferences);
+            status.Text = "试听结束。";
+        }
+
+        async Task RestartVoiceServiceAsync()
+        {
+            status.Text = "正在重启语音服务…";
+            try { if (voiceService != null) await voiceService.RestartAsync(preferences); } catch { }
+            await RefreshAsync();
+        }
+
+        Action("检测服务", () => _ = RefreshAsync());
+        Action("试听", () => _ = PlaySampleAsync());
+        Action("重启服务", () => _ = RestartVoiceServiceAsync());
         Action("打开语音目录", () =>
         {
             try

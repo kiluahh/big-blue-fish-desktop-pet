@@ -1,4 +1,4 @@
-# 语音朗读设计
+﻿# 语音朗读设计
 
 ## 目标
 
@@ -12,10 +12,11 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 
 | 部分 | 位置 | 职责 |
 | --- | --- | --- |
-| `tts_server.py` | 由使用者放在语音文件夹里运行 | 常驻进程，启动时加载一次 F5 模型，`POST /speak` 返回 wav，`GET /health` 返回可用音色 |
+| `tts_server.py` | 语音文件夹，程序按需拉起 | 启动时加载一次 F5 模型，`POST /speak` 返回 wav，`GET /health` 返回可用音色 |
 | `tts_kokoro_server.py` | 同上 | Kokoro v1.1-zh 服务，权重只读本地 `models/kokoro` |
 | `tts_gsv_server.py` | 同上 | GPT-SoVITS v2 服务，权重读 `models/gsv`，没有时退回源码仓库自带的副本 |
 | `CompanionVoice` | `code/BigBlueFish.Windows/Companion/CompanionVoice.cs` | 引擎选择、合成、播放、停止 |
+| `CompanionVoiceService` | `code/BigBlueFish.Windows/Companion/CompanionVoiceService.cs` | 本机服务生命周期：按需启动、健康轮询、退出时连子进程一起收走（见 `2026-11-18-voice-service-lifecycle-design.md`） |
 | `IVoiceEngine` | 同上 | `SystemVoiceEngine`（系统语音）与 `F5VoiceEngine`（HTTP，三个本地引擎共用）两个实现 |
 | `IAudioSink` | 同上 | 播放接缝；正式实现用 WPF `MediaPlayer`，测试替换成记录器 |
 
@@ -26,7 +27,8 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 设置窗口新增第 5 页「语音朗读」：
 
 - 总开关、气泡延迟、引擎（F5 / Kokoro / GPT-SoVITS / 系统语音）、显卡加速开关、音色（F5 与 Kokoro 从 `/health` 拉取；GPT-SoVITS 自己挑参考音色，不显示选择器）、语速 0.7–1.4、音调 ±6 半音（0.1 半音一档）、合成步数 8–40、音量 0–200%
-- 状态行显示服务是否连通，检测服务、试听、打开语音目录按钮
+- 状态行显示服务是否连通、是谁拉起的，检测服务、试听、重启服务、打开语音目录按钮
+- 「本地服务」：Python 解释器路径（留空自动查找语音文件夹里的 `.venv`，再退回 PATH）、跟随程序启动与退出开关
 - 朗读范围：日常关心与问候 / 手动点击与测试 / Agent 与 MCP
 - 「语音模型」区块按引擎列出体积、许可、就绪状态，可单独下载、取消、删除
 
@@ -40,7 +42,7 @@ F5-TTS 的 Python 运行时（torch + CUDA）约 11 GB，参考音色的授权�
 - 播放用的临时 wav 写在 `<语音文件夹>\cache\`，命名 `clip-<进程>-<序号>.wav`，播放结束即删；每次播放顺手清掉一小时前的残留。
 - 启用语音时启动即建好这个文件夹，设置页的「打开语音目录」也指向它。
 
-模型、参考音色和 `tts_server.py` 由使用者自己放进这个文件夹（或别的自选目录），程序只按 `SpeechEndpoint` 去连，不猜路径。
+模型、参考音色和 `tts_server.py` 由使用者自己放进这个文件夹（或别的自选目录），程序只按 `SpeechEndpoint` 去连，不猜路径。地址在本机且没有服务应答时，程序用语音文件夹里的脚本自己拉起服务，退出时收走；地址在别处或已有服务应答时只连接、不接管。
 
 ## 内置代码与权重下载
 
@@ -82,7 +84,7 @@ F5 模型本身没有音调参数。`/speak` 增加 `pitch`（半音，−12–1
 
 ## 验证
 
-- `AnimationUiVerification --speech-audio`：52 项。覆盖开关、引擎调用次数、音量透传、驻留延长、范围开关、停止、设置归一化、气泡延迟，以及三个模型清单的体积求和、目录映射、缺文件/尺寸不符判定与删除。用假引擎与假播放器，CI 无声卡也能跑。
+- `AnimationUiVerification --speech-audio`：87 项。覆盖开关、引擎调用次数、音量透传、驻留延长、范围开关、停止、设置归一化、气泡延迟，以及三个模型清单的体积求和、目录映射、缺文件/尺寸不符判定与删除。用假引擎、假播放器、假语音进程与假探针，CI 无声卡、无 python 也能跑。
 - `AnimationUiVerification --speech-download <engine> <folder>`：手动模式，走真实的 HTTP 下载，验证续传与校验；不参与常规测试。
 - 实机：三个服务都启动过一次，`/health` 与 `/speak` 各跑通，Kokoro 本地权重 316 MB、合成 0.5 秒；GPT-SoVITS 本地权重 1.03 GB、合成 6.5 秒；F5 仍从缓存加载。
 
@@ -90,4 +92,5 @@ F5 模型本身没有音调参数。`/speak` 增加 `pitch`（半音，−12–1
 
 - 不做事级对齐（卡拉 OK 高亮）：本地模型没有时间戳。
 - 不做夜间静音策略，先用手动开关。
+- 不自动安装 Python 或依赖，也不托管远程服务地址。
 - macOS / Linux 不接：两端的窗口层尚未实现播放。

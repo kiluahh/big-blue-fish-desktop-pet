@@ -13,6 +13,7 @@ public enum DiagnosticEvent
     AppStarted, AppStopped, SettingsOpened, SettingsClosed, SettingsChanged, VisibilityChanged,
     SessionRecovery, Interaction, AnimationStarted, AnimationCompleted, AnimationFailed, TrayState, AppFailed,
     SpeechRequested, SpeechSkipped, SpeechStarted, SpeechCompleted, SpeechCancelled, SpeechFailed,
+    VoiceServiceStarted, VoiceServiceStopped, VoiceServiceFailed,
     ScreenReadStarted, ScreenReadCompleted, ScreenReadFallback, BubbleShown, BubbleClosed,
     RunnerStarting, RunnerReady, RunnerStopped, RunnerFailed, RunnerCpuFallback,
     WeatherRefresh, WeatherCached, WeatherFailed, NewsFetch, NewsSelected, NewsFailed,
@@ -48,7 +49,7 @@ public static class DiagnosticLog
     static readonly HashSet<string> settingNames = new(("ModelEnabled GpuEnabled PublicInfo ForegroundEnabled StopModelOnBattery HideOnFullscreen CheckUpdatesOnStartup "
         + "AgentEnabled AgentHarnessId AgentDailySpeech PuppetMode AgentRespondToClick AgentRespondToDrag WeatherRegionCode Scale BubbleScale SpeechMinMinutes BubbleDurationIndex "
         + "AnimationIntervalSeconds BreakfastHour LunchHour DinnerHour LastBrushDate Left Top StartupEnabled "
-        + "SpeechEnabled SpeechEngine SpeechVoice SpeechRate SpeechPitch SpeechVolume SpeechNfe SpeechEndpoint SpeechEndpointKokoro SpeechEndpointGsv SpeechAutoCare SpeechInteraction SpeechExternal SpeechBubbleWithAudio SpeechUseGpu "
+        + "SpeechEnabled SpeechEngine SpeechVoice SpeechRate SpeechPitch SpeechVolume SpeechNfe SpeechEndpoint SpeechEndpointKokoro SpeechEndpointGsv SpeechAutoCare SpeechInteraction SpeechExternal SpeechBubbleWithAudio SpeechUseGpu SpeechAutoStart SpeechPython "
         + "McpEnabled McpDoubleClickChat McpWakeEnabled McpWakeOnText McpWakeOnClick McpWakeOnDrag AgentWorkspaceId").Split(' '), StringComparer.Ordinal);
     static HashSet<string> LoadActions()
     {
@@ -158,6 +159,7 @@ public static class DiagnosticLog
         DiagnosticEvent.AnimationStarted => "开始播放动作", DiagnosticEvent.AnimationCompleted => "动作播放结束", DiagnosticEvent.AnimationFailed => "动画播放失败",
         DiagnosticEvent.SpeechRequested => "收到吐字请求", DiagnosticEvent.SpeechSkipped => "本次吐字未执行", DiagnosticEvent.SpeechStarted => "开始准备吐字",
         DiagnosticEvent.SpeechCompleted => "模型吐字生成完成", DiagnosticEvent.SpeechCancelled => "吐字已取消", DiagnosticEvent.SpeechFailed => "吐字生成失败",
+        DiagnosticEvent.VoiceServiceStarted => "启动本地语音服务", DiagnosticEvent.VoiceServiceStopped => "本地语音服务已停止", DiagnosticEvent.VoiceServiceFailed => "本地语音服务启动失败",
         DiagnosticEvent.ScreenReadStarted => "开始读取前台画面", DiagnosticEvent.ScreenReadCompleted => "前台资料准备完成", DiagnosticEvent.ScreenReadFallback => "读屏不可用，静默使用剩余资料生成",
         DiagnosticEvent.BubbleShown => "文字已交给气泡显示", DiagnosticEvent.BubbleClosed => "气泡已关闭",
         DiagnosticEvent.RunnerStarting => "启动本地推理程序", DiagnosticEvent.RunnerReady => "本地模型已就绪", DiagnosticEvent.RunnerStopped => "推理程序已停止",

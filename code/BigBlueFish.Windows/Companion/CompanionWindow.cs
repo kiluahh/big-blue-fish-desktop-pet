@@ -235,6 +235,7 @@ public partial class MainWindow
         Loaded += async (_, _) =>
         {
             InstallCompanionHook();
+            EnsureVoiceService();
             await LoadCompanionAnimations();
             if (preferences.CheckUpdatesOnStartup && !App.Args.Contains("--test-mode"))
             {
@@ -878,6 +879,7 @@ public partial class MainWindow
         singleClickTimer?.Stop();
         videoPlayer?.Dispose();
         loadingSpinner?.Stop();
+        StopVoiceService();
         voice.Dispose();
         speech?.Dispose();
         brain?.Dispose();

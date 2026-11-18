@@ -79,6 +79,10 @@ internal sealed class CompanionPreferences
     public bool SpeechExternal { get; set; } = true;
     // Hold the bubble until the clip is ready, so text and voice start together.
     public bool SpeechBubbleWithAudio { get; set; } = true;
+    // Start the local speech service with the pet and take it down on exit. Off means the user runs it by hand.
+    public bool SpeechAutoStart { get; set; } = true;
+    // Python interpreter for the local service. Empty means the voice folder's own venv, then PATH.
+    public string SpeechPython { get; set; } = "";
     public int AnimationIntervalSeconds { get; set; } = 40;
     public int BreakfastHour { get; set; } = 8;
     public int LunchHour { get; set; } = 12;
@@ -162,6 +166,7 @@ internal sealed class CompanionPreferences
                     s.SpeechEndpointKokoro = NormalizeEndpoint(s.SpeechEndpointKokoro, "http://127.0.0.1:8766");
                     s.SpeechEndpointGsv = NormalizeEndpoint(s.SpeechEndpointGsv, "http://127.0.0.1:8767");
                     s.SpeechFolder = string.IsNullOrWhiteSpace(s.SpeechFolder) ? "" : s.SpeechFolder.Trim();
+                    s.SpeechPython = (s.SpeechPython ?? "").Trim();
                     s.WeatherRegionCode = CompanionRegions.District(s.WeatherRegionCode).Code;
                     return s;
                 }

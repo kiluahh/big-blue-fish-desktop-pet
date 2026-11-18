@@ -315,6 +315,12 @@ internal static partial class Program
         Check(clamped.SpeechEngine=="f5","an unknown engine falls back to the local service");
         Check(clamped.SpeechEndpoint=="http://127.0.0.1:8765","a non-http endpoint falls back to the default");
         Check(clamped.SpeechDirectory==Path.Combine(Environment.CurrentDirectory,"voice"),"the voice folder defaults to the installation data directory");
+        File.WriteAllText("preferences.json","{\"SpeechPython\":\"  C:\\\\tools\\\\python.exe  \",\"SpeechAutoStart\":false}");
+        var pythonPrefs=CompanionPreferences.Read();
+        File.WriteAllText("preferences.json",original);
+        Check(pythonPrefs.SpeechPython==@"C:\tools\python.exe","the interpreter path is trimmed");
+        Check(!pythonPrefs.SpeechAutoStart,"the auto start switch survives a reload");
+        Check(new CompanionPreferences().SpeechAutoStart,"auto start is on by default");
 
         // Model downloads: one folder per engine, exact sizes drive both progress and the ready state.
         var scratch=Path.Combine(Environment.CurrentDirectory,"pack-test");
@@ -347,6 +353,86 @@ internal static partial class Program
         var resources=typeof(MainWindow).Assembly.GetManifestResourceNames();
         foreach(var script in CompanionVoicePacks.Scripts)
             Check(resources.Any(name=>name.EndsWith("."+script,StringComparison.Ordinal)),"the "+script+" script ships inside the app");
+
+        // Voice service lifecycle: the pet starts the local python service and takes the whole tree down on exit.
+        Check(VoiceServicePlan.ScriptFor("f5")=="tts_server.py","f5 runs the F5 server script");
+        Check(VoiceServicePlan.ScriptFor("kokoro")=="tts_kokoro_server.py","kokoro runs its own script");
+        Check(VoiceServicePlan.ScriptFor("gsv")=="tts_gsv_server.py","gpt-sovits runs its own script");
+        Check(VoiceServicePlan.ScriptFor("system")==null,"the system voice needs no local service");
+        Check(VoiceServicePlan.IsLoopback("http://127.0.0.1:8765")&&VoiceServicePlan.IsLoopback("http://localhost:8766")&&VoiceServicePlan.IsLoopback("http://[::1]:8767"),"loopback endpoints count as local");
+        Check(!VoiceServicePlan.IsLoopback("http://192.168.1.9:8765"),"a network endpoint is not local");
+
+        var life=new CompanionPreferences{SpeechEnabled=true,SpeechEngine="f5",SpeechAutoStart=true};
+        var plan=VoiceServicePlan.TryDescribe(life,scratch,p=>true);
+        Check(plan!=null&&plan.Arguments=="tts_server.py --host 127.0.0.1 --port 8765","the plan runs the engine script on the loopback port");
+        Check(plan!.WorkingDirectory==scratch,"the service runs inside the voice folder");
+        life.SpeechEndpoint="http://127.0.0.1:9005";
+        Check(VoiceServicePlan.TryDescribe(life,scratch,p=>true)?.Arguments=="tts_server.py --host 127.0.0.1 --port 9005","a custom port reaches the script");
+        life.SpeechEndpoint="http://127.0.0.1:8765";
+        life.SpeechAutoStart=false;
+        Check(VoiceServicePlan.TryDescribe(life,scratch,p=>true)==null,"auto start off never launches a service");
+        life.SpeechAutoStart=true;life.SpeechEnabled=false;
+        Check(VoiceServicePlan.TryDescribe(life,scratch,p=>true)==null,"the master switch gates the service");
+        life.SpeechEnabled=true;life.SpeechEngine="system";
+        Check(VoiceServicePlan.TryDescribe(life,scratch,p=>true)==null,"the in-box voice never launches python");
+        life.SpeechEngine="gsv";life.SpeechEndpointGsv="http://192.168.1.9:8767";
+        Check(VoiceServicePlan.TryDescribe(life,scratch,p=>true)==null,"a remote service is connected but never launched");
+        var venv=Path.Combine(scratch,".venv","Scripts","python.exe");
+        Check(VoiceServicePlan.ResolvePython("",scratch,p=>p==venv)==venv,"the voice folder's own venv wins");
+        var plain=Path.Combine(scratch,"venv","Scripts","python.exe");
+        Check(VoiceServicePlan.ResolvePython("",scratch,p=>p==plain)==plain,"a plain venv folder is the second choice");
+        Check(VoiceServicePlan.ResolvePython("",scratch,p=>false)=="python","without a venv the service falls back to PATH python");
+        Check(VoiceServicePlan.ResolvePython("env\\python.exe",scratch,p=>false)==Path.Combine(scratch,"env","python.exe"),"a relative interpreter lives in the voice folder");
+
+        // Nothing already listening is adopted; only a process we spawned is ever killed.
+        FakeServiceProcess? spawned=null;
+        var spawns=new List<VoiceServiceLaunch>();
+        string? liveEndpoint=null;
+        var service=new CompanionVoiceService(
+            launch=>{spawns.Add(launch);spawned=new FakeServiceProcess();liveEndpoint=launch.Endpoint;return spawned;},
+            (endpoint,token)=>Task.FromResult(spawned is{HasExited:false}&&endpoint==liveEndpoint));
+        var owned=new CompanionPreferences{SpeechEnabled=true,SpeechAutoStart=true,SpeechEngine="f5"};
+        Check(service.EnsureStartedAsync(owned).GetAwaiter().GetResult()==VoiceServiceState.Running&&service.Owned&&spawns.Count==1,"a missing service is started on demand");
+        Check(service.EnsureStartedAsync(owned).GetAwaiter().GetResult()==VoiceServiceState.Running&&spawns.Count==1,"starting the service twice spawns once");
+        Check(service.Pid==spawned!.Id,"the host reports the process it owns");
+        var first=spawned;
+        service.Stop();
+        Check(first.Kills==1&&!service.Owned,"stopping kills the whole tree it started");
+        Check(service.EnsureStartedAsync(owned).GetAwaiter().GetResult()==VoiceServiceState.Running&&spawns.Count==2,"a stopped service comes back when it is still needed");
+        var previous=spawned;
+        owned.SpeechEngine="kokoro";
+        Check(service.EnsureStartedAsync(owned).GetAwaiter().GetResult()==VoiceServiceState.Running,"switching engines keeps the service running");
+        Check(spawns.Count==3&&spawns[^1].Arguments.StartsWith("tts_kokoro_server.py ",StringComparison.Ordinal),"the new engine gets its own script");
+        Check(previous!.Kills>=1,"switching engines retires the old process");
+        service.Dispose();
+        Check(spawned!.Kills>=1,"disposing the host takes the service down");
+
+        var spawnedElsewhere=0;
+        var external=new CompanionVoiceService(_=>{spawnedElsewhere++;return new FakeServiceProcess();},(endpoint,token)=>Task.FromResult(true));
+        Check(external.EnsureStartedAsync(owned).GetAwaiter().GetResult()==VoiceServiceState.External&&spawnedElsewhere==0,"an already running service is adopted without spawning");
+        external.Stop();
+        Check(spawnedElsewhere==0,"adopting never kills somebody else's service");
+        external.Dispose();
+
+        var failing=new CompanionVoiceService(_=>null,(endpoint,token)=>Task.FromResult(false));
+        Check(failing.EnsureStartedAsync(owned).GetAwaiter().GetResult()==VoiceServiceState.Failed&&failing.Detail.Length>0,"a service that cannot start reports why");
+        failing.Dispose();
+        var dying=new CompanionVoiceService(_=>new FakeServiceProcess{HasExited=true},(endpoint,token)=>Task.FromResult(false));
+        Check(dying.EnsureStartedAsync(owned).GetAwaiter().GetResult()==VoiceServiceState.Failed,"a service that exits while loading fails fast");
+        dying.Dispose();
+        var spare=0;
+        var manual=new CompanionPreferences{SpeechEnabled=true,SpeechEngine="f5",SpeechAutoStart=false};
+        var idle=new CompanionVoiceService(_=>{spare++;return new FakeServiceProcess();},(endpoint,token)=>Task.FromResult(false));
+        Check(idle.EnsureStartedAsync(manual).GetAwaiter().GetResult()==VoiceServiceState.Disabled&&spare==0,"a hand-started setup is left alone");
+        idle.Dispose();
+
+        // The pet wires the same host: startup asks for it, shutdown takes it away.
+        var host=new FakeVoiceHost();
+        Field(w,"voiceService",host);
+        Invoke(w,"EnsureVoiceService");
+        Invoke(w,"StopVoiceService");
+        Check(host.Ensures==1&&host.Stops==1,"the pet starts and stops the owned speech service");
+
         Directory.Delete(scratch,true);
         Console.WriteLine($"Speech: {checks} voice pipeline checks passed.");
     }
@@ -367,6 +453,28 @@ internal static partial class Program
             if(DelayMilliseconds>0)await Task.Delay(DelayMilliseconds,token);
             return new VoiceClip(new byte[256],3);
         }
+    }
+    sealed class FakeServiceProcess:IVoiceServiceProcess
+    {
+        public int Id{get;set;}=4242;
+        public bool HasExited{get;set;}
+        public int? ExitCode=>HasExited?3:null;
+        public string Tail=>"";
+        public int Kills;public bool Disposed;
+        public void Kill(){Kills++;HasExited=true;}
+        public bool WaitForExit(int milliseconds)=>HasExited;
+        public void Dispose(){Disposed=true;}
+    }
+    sealed class FakeVoiceHost:IVoiceServiceHost
+    {
+        public int Ensures,Stops;
+        public VoiceServiceState State=>VoiceServiceState.Disabled;
+        public bool Owned=>false;
+        public int? Pid=>4321;
+        public string Detail=>"";
+        public Task<VoiceServiceState> EnsureStartedAsync(CompanionPreferences preferences,System.Threading.CancellationToken token=default){Ensures++;return Task.FromResult(VoiceServiceState.Disabled);}
+        public Task<VoiceServiceState> RestartAsync(CompanionPreferences preferences,System.Threading.CancellationToken token=default){Ensures++;return Task.FromResult(VoiceServiceState.Disabled);}
+        public void Stop()=>Stops++;
     }
     [STAThread] static int Main(string[] args)
     {

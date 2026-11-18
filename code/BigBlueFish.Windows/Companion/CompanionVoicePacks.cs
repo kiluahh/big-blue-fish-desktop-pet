@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -63,7 +63,7 @@ internal static class CompanionVoicePacks
 
     // Sizes come from the repository listings and are used both for progress and for "is it complete".
     internal static readonly VoicePack F5Pack = new("f5", "F5-TTS v1 Base", "CC BY-NC 4.0（仅非商业）",
-        "启动：python tts_server.py", ["tts_server.py", "f5_tts_run.py"],
+        "启动：由程序自动启动", ["tts_server.py", "f5_tts_run.py"],
         [
             new("model_1250000.safetensors", F5 + "model_1250000.safetensors", 1348435761),
             new("vocab.txt", F5 + "vocab.txt", 13800),
@@ -72,7 +72,7 @@ internal static class CompanionVoicePacks
         ]);
 
     internal static readonly VoicePack KokoroPack = new("kokoro", "Kokoro v1.1-zh", "Apache-2.0",
-        "启动：python tts_kokoro_server.py", ["tts_kokoro_server.py"],
+        "启动：由程序自动启动", ["tts_kokoro_server.py"],
         [
             new("config.json", Kokoro + "config.json", 3228),
             new("kokoro-v1_1-zh.pth", Kokoro + "kokoro-v1_1-zh.pth", 327247856),
@@ -80,7 +80,7 @@ internal static class CompanionVoicePacks
         ]);
 
     internal static readonly VoicePack GsvPack = new("gsv", "GPT-SoVITS v2", "MIT",
-        "启动：python tts_gsv_server.py（另需源码与参考音频）", ["tts_gsv_server.py"],
+        "启动：由程序自动启动（另需源码与参考音频）", ["tts_gsv_server.py"],
         [
             new(Path.Combine("gsv-v2final-pretrained", "s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt"),
                 Gsv + "gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt", 155315150),
