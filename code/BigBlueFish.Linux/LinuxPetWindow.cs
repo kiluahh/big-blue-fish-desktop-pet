@@ -45,6 +45,7 @@ internal sealed partial class LinuxPetWindow : Window
     DateTime bubbleUntil = DateTime.MaxValue;
     IntPtr lastForeground;
     bool closed, exitReady, hidden, fullscreenHidden, dragging, dragged, generating, streamed, externalSpeech, typing, modelReply, greetingNoticeActive;
+    DispatcherTimer? exitWatchdog;
     long speechVersion;
     int[] textBoundaries = [];
     PixelPoint dragOrigin, windowOrigin, moveOrigin;
@@ -134,18 +135,44 @@ internal sealed partial class LinuxPetWindow : Window
         };
         PointerCaptureLost += (_, _) => { Cursor = Palm; if (dragging) { dragging = false; if (dragged) PublishInteraction("drag_end", new { Position.X, Position.Y, cancelled = true }); if (!Puppet) Idle(); } };
         Closing += (_, e) => {
-            Save();
-            CloseModelInstaller();
+            try { Save(); CloseModelInstaller(); } catch { }
             if (exitReady || closed || Puppet) return;
             e.Cancel = true; if (phase == "Exit") return;
-            speechVersion++; brain.Stop(); moveRule = null; settings?.Close(); hidden = false; fullscreenHidden = false; Show(); player.Paused = false;
-            Play(policy.Find("女仆屈膝礼仪"), "Exit"); ShowText("主人再见~鱼鱼喜欢主人哦", false, true);
+            try {
+                speechVersion++; brain.Stop(); moveRule = null; settings?.Close(); hidden = false; fullscreenHidden = false; Show(); player.Paused = false;
+                Play(policy.Find("女仆屈膝礼仪"), "Exit"); ShowText("主人再见~鱼鱼喜欢主人哦", false, true);
+            } catch {
+                // 道别动作播放不出来就直接退出，别把窗口留在桌面上。
+                CloseImmediately();
+                return;
+            }
+            // 播放器偶尔不回报播放结束（视频解码卡住或窗口被系统收起），兜底几秒后照样关闭。
+            exitWatchdog?.Stop();
+            exitWatchdog = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+            exitWatchdog.Tick += (_, _) => { exitWatchdog?.Stop(); CloseImmediately(); };
+            exitWatchdog.Start();
         };
-        Closed += (_, _) => { DiagnosticLog.Write(DiagnosticEvent.AppStopped, kind: "Linux"); closed = true; timer.Stop(); StopMcp(); brain.Dispose(); player.Dispose();
+        Closed += (_, _) => {
+            closed = true;
+            // 清理里可能卡在 GStreamer、语音服务或退出动画上，先挂一个硬退出兜底，保证进程一定结束。
+            new Thread(() => { Thread.Sleep(4000); Environment.Exit(0); }) { IsBackground = true, Name = "shutdown-watchdog" }.Start();
+            try { DiagnosticLog.Write(DiagnosticEvent.AppStopped, kind: "Linux"); } catch { }
+            try { Save(); } catch { }
+            try { timer.Stop(); } catch { }
+            try { StopMcp(); } catch { }
+            try { brain.Dispose(); } catch { }
+            try { player.Dispose(); } catch { }
 #if COMPANION_LINUX
-            StopVoice(); voiceService?.Stop(); voice.Dispose();
+            try { StopVoice(); } catch { }
+            try { voiceService?.Stop(); } catch { }
+            try { voice.Dispose(); } catch { }
 #endif
-            bubbleWindow.Close(); settings?.Close(); Save(); mutex.Dispose(); (Avalonia.Application.Current!.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)!.Shutdown(); };
+            try { bubbleWindow.Close(); } catch { }
+            try { settings?.Close(); } catch { }
+            try { mutex.Dispose(); } catch { }
+            try { (Avalonia.Application.Current!.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)!.Shutdown(); } catch { }
+            Environment.Exit(0);
+        };
         timer.Tick += async (_, _) => await Tick();
     }
     CompanionAnimationContext Context() => new(DateTime.Now, BreakfastHour: Preferences.BreakfastHour, LunchHour: Preferences.LunchHour, DinnerHour: Preferences.DinnerHour);

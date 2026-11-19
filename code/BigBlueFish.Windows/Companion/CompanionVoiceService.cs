@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -281,10 +281,11 @@ internal sealed class CompanionVoiceService : IVoiceServiceHost, IDisposable
             launch = null;
         }
         if (stopped == null) return;
+        var pid = stopped.Id;
         try { if (!stopped.HasExited) stopped.Kill(); } catch { }
         try { stopped.WaitForExit(KillWaitMilliseconds); } catch { }
         try { stopped.Dispose(); } catch { }
-        DiagnosticLog.Write(DiagnosticEvent.VoiceServiceStopped, kind: "voice", state: "stopped", count: stopped.Id,
+        DiagnosticLog.Write(DiagnosticEvent.VoiceServiceStopped, kind: "voice", state: "stopped", count: pid,
             directory: where?.WorkingDirectory);
     }
 }
@@ -331,7 +332,7 @@ internal sealed class VoiceServiceProcess : IVoiceServiceProcess
         return wrapper;
     }
 
-    public int Id => process.Id;
+    public int Id { get { try { return process.Id; } catch { return -1; } } }
     public bool HasExited { get { try { return process.HasExited; } catch { return true; } } }
     public int? ExitCode { get { try { return process.HasExited ? process.ExitCode : null; } catch { return null; } } }
     public string Tail { get { lock (sync) return string.Join(" ", lines); } }
