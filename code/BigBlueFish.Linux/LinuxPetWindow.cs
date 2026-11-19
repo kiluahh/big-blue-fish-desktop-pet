@@ -267,7 +267,10 @@ internal sealed partial class LinuxPetWindow : Window
     {
         Dispatcher.UIThread.Post(() => {
             if (expectedVersion != speechVersion || Puppet && !agentTriggered || closed || hidden || fullscreenHidden || !Preferences.ModelEnabled || !brain.CanRunOnCurrentPower) return;
-            greetingNoticeActive = false; streamed = true; fullText = text; typing = false; typingSeconds = 0; externalSpeech = false; modelReply = true; bubbleText.Text = text; bubbleUntil = DateTime.MaxValue;
+            greetingNoticeActive = false; streamed = true; fullText = text; typing = false; typingSeconds = 0; externalSpeech = false; modelReply = true;
+            // 开了“气泡等声音开始再出现”就先把流式文字攒着，等音频真的开始再一起出现。
+            if (Speaks(agentTriggered ? VoiceScope.Interactive : VoiceScope.Automatic) && Preferences.SpeechBubbleWithAudio) return;
+            bubbleText.Text = text; bubbleUntil = DateTime.MaxValue;
             MoveBubble(); ShowBubble();
         });
     }
@@ -368,6 +371,8 @@ internal sealed partial class LinuxPetWindow : Window
     async Task SpeakAsync(string text)
     {
         var token = voice.BeginSpeaking();
+        // 气泡已经在屏幕上时，合成这段语音要几秒，别让气泡提前收走，等声音一起走完。
+        if (bubbleWindow.IsVisible && Preferences.SpeechBubbleWithAudio) { voiceHoldUntil = DateTime.UtcNow.AddSeconds(30); ResetDwell(); }
         VoiceClip? clip;
         try { clip = await voice.SynthesizeAsync(text, Preferences, token).ConfigureAwait(true); }
         catch (OperationCanceledException) { return; }
@@ -443,15 +448,16 @@ internal sealed partial class LinuxPetWindow : Window
             var text = weather ? await brain.GenerateWeather(p => Partial(p, version, agentTriggered)) : await brain.Generate(Preferences.PublicInfo, Preferences.ForegroundEnabled, lastForeground, p => Partial(p, version, agentTriggered));
             if (version != speechVersion || Puppet && !agentTriggered || hidden || fullscreenHidden || closed || !Preferences.ModelEnabled || !brain.CanRunOnCurrentPower) return;
             if (text.Length > 0) {
-                if (streamed) {
+#if COMPANION_LINUX
+                var scope = agentTriggered ? VoiceScope.Interactive : VoiceScope.Automatic;
+                // 等声音的模式下即使模型是流式吐字，也只在音频开始那一刻把字放出来，避免字说完才出声。
+                if (streamed && !(Speaks(scope) && Preferences.SpeechBubbleWithAudio)) {
                     fullText = text; bubbleText.Text = text; ResetDwell();
-#if COMPANION_LINUX
-                    if (Speaks(agentTriggered ? VoiceScope.Interactive : VoiceScope.Automatic)) _ = SpeakAsync(text);
-#endif
+                    if (Speaks(scope)) _ = SpeakAsync(text);
                 }
-#if COMPANION_LINUX
-                else ShowVoiceText(text, agentTriggered ? VoiceScope.Interactive : VoiceScope.Automatic, fromModel: true);
+                else ShowVoiceText(text, scope, fromModel: true);
 #else
+                if (streamed) { fullText = text; bubbleText.Text = text; ResetDwell(); }
                 else ShowText(text, false, fromModel: true);
 #endif
             }
