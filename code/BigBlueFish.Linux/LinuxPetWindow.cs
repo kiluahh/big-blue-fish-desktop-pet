@@ -6,6 +6,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 
 namespace BigBlueFish.Windows;
@@ -26,6 +28,9 @@ internal sealed partial class LinuxPetWindow : Window
     readonly Stopwatch typingClock = new();
     readonly Queue<string> externalActions = new();
     readonly Mutex mutex;
+    // The two palm states ship as PNGs derived from the Windows .cur files; X11 shows them
+    // only where the input shape lets the window receive the pointer.
+    static readonly Cursor Palm = LoadCursor("Palm"), PalmGrab = LoadCursor("PalmGrab");
     string currentAction = "", phase = "Startup", fullText = "";
     string? nextExternalText;
     DateTime nextSpeech = DateTime.UtcNow.AddSeconds(45), nextEvent = DateTime.MaxValue, nextWarmup;
@@ -57,7 +62,7 @@ internal sealed partial class LinuxPetWindow : Window
         brain = new() { UseGpu = Preferences.GpuEnabled, StopOnBattery = Preferences.StopModelOnBattery, WeatherRegionCode = Preferences.WeatherRegionCode };
         Title = "蓝色大肥鱼"; WindowDecorations = WindowDecorations.None; ShowInTaskbar = false; ShowActivated = false;
         Topmost = true; CanResize = false; Background = Brushes.Transparent; TransparencyLevelHint = [WindowTransparencyLevel.Transparent];
-        var canvas = new Grid(); canvas.Children.Add(sprite); canvas.Children.Add(loading); Content = canvas;
+        var canvas = new Grid(); canvas.Children.Add(sprite); canvas.Children.Add(loading); Content = canvas; Cursor = Palm;
         loading.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left; loading.VerticalAlignment = Avalonia.Layout.VerticalAlignment.Top;
         player = new(sprite); player.FramePresented += MoveWithAnimation;
         PositionChanged += (_, _) => MoveBubble();
@@ -87,7 +92,7 @@ internal sealed partial class LinuxPetWindow : Window
             if (point.Properties.IsRightButtonPressed) { PublishInteraction("click", new { button = "right", Position.X, Position.Y }); OpenMenu(); e.Handled = true; return; }
             if (!point.Properties.IsLeftButtonPressed) return;
             if (e.ClickCount == 2 && TryOpenMcpInput()) { lastClickAt = 0; PublishInteraction("click", new { button = "left", count = 2, Position.X, Position.Y }); e.Handled = true; return; }
-            dragging = true; dragged = false; moveRule = null; windowOrigin = Position;
+            dragging = true; dragged = false; moveRule = null; windowOrigin = Position; Cursor = PalmGrab;
             var screenPoint = this.PointToScreen(point.Position); dragOrigin = screenPoint;
             e.Pointer.Capture(this); e.Handled = true;
         };
@@ -100,6 +105,7 @@ internal sealed partial class LinuxPetWindow : Window
             Position = new(windowOrigin.X + dx, windowOrigin.Y + dy); MoveBubble();
         };
         PointerReleased += (_, e) => {
+            Cursor = Palm;
             if (!dragging) return; dragging = false; e.Pointer.Capture(null); Clamp(); Save();
             if (dragged) { lastClickAt = 0; PublishInteraction("drag_end", new { Position.X, Position.Y, cancelled = false }); if (!Puppet && !PlayQueued()) Idle(); }
             else {
@@ -112,7 +118,7 @@ internal sealed partial class LinuxPetWindow : Window
             }
             e.Handled = true;
         };
-        PointerCaptureLost += (_, _) => { if (dragging) { dragging = false; if (dragged) PublishInteraction("drag_end", new { Position.X, Position.Y, cancelled = true }); if (!Puppet) Idle(); } };
+        PointerCaptureLost += (_, _) => { Cursor = Palm; if (dragging) { dragging = false; if (dragged) PublishInteraction("drag_end", new { Position.X, Position.Y, cancelled = true }); if (!Puppet) Idle(); } };
         Closing += (_, e) => {
             Save();
             CloseModelInstaller();
@@ -139,6 +145,19 @@ internal sealed partial class LinuxPetWindow : Window
         Position = result; MoveBubble(); return result;
     }
     void Save() { if (closed) return; Preferences.Left = Position.X; Preferences.Top = Position.Y; Preferences.Save(); DiagnosticLog.ObserveSettings(Preferences); }
+    static Cursor LoadCursor(string name)
+    {
+        try
+        {
+            using var stream = AssetLoader.Open(new Uri($"avares://{typeof(App).Assembly.GetName().Name}/Res/Cursor/{name}.png"));
+            return new Cursor(new Bitmap(stream), new PixelPoint(17, 18));
+        }
+        catch (Exception)
+        {
+            // A trimmed build without the resource stays usable with the system hand.
+            return new Cursor(StandardCursorType.Hand);
+        }
+    }
     void Play(CompanionAnimationRule rule, string nextPhase, bool mirror = false)
     {
         if (closed) return;

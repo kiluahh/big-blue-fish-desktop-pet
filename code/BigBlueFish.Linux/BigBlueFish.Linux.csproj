@@ -24,6 +24,8 @@
     <EmbeddedResource Include="../BigBlueFish.Windows/assets/regions/world-regions.json" LogicalName="BigBlueFish.Windows.assets.regions.world-regions.json" />
     <EmbeddedResource Include="../BigBlueFish.Windows/assets/regions/world-countries.json" LogicalName="BigBlueFish.Windows.assets.regions.world-countries.json" />
     <AvaloniaResource Include="../BigBlueFish.Windows/Res/Font/LemiXiaoNaiPaoTi.ttf" Link="Assets/LemiXiaoNaiPaoTi.ttf" />
+    <AvaloniaResource Include="../BigBlueFish.Windows/Res/Cursor/Palm.png" Link="Res/Cursor/Palm.png" />
+    <AvaloniaResource Include="../BigBlueFish.Windows/Res/Cursor/PalmGrab.png" Link="Res/Cursor/PalmGrab.png" />
     <Content Include="../BigBlueFish.Windows/assets/fish/**/*" Link="assets/fish/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../BigBlueFish.Windows/BigBlueFish.ico" Link="BigBlueFish.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
