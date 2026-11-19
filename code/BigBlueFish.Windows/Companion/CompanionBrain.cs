@@ -285,6 +285,13 @@ internal sealed class CompanionBrain : IDisposable
         };
         if (gpu) { arguments.Add("--fit-target"); arguments.Add(microBatch >= 2048 ? "1024" : microBatch >= 512 ? "768" : "384"); }
         if (!gpu) { arguments.Add("--device"); arguments.Add("none"); }
+        // 混合显卡的笔记本上 llama.cpp 会把所有 Vulkan 设备都打开，核显会把提示词处理拖到几十 token/s，
+        // 所以按名字点选独显，让整份模型只落在一块卡上。
+        if (gpu && OperatingSystem.IsLinux() && PickVulkanDevice(path) is { } vulkanDevice)
+        {
+            arguments.Add("--device");
+            arguments.Add(vulkanDevice);
+        }
         if (VisionAvailable)
         {
             arguments.Add("--mmproj");
@@ -791,6 +798,53 @@ internal sealed class CompanionBrain : IDisposable
         {
         }
     }
+
+    // Hybrid laptops expose both the discrete card and the integrated one to the Vulkan backend;
+    // pinning the discrete device keeps the whole model on one card instead of splitting across both.
+    private static string? PickVulkanDevice(string serverPath)
+    {
+        try
+        {
+            var start = new ProcessStartInfo(serverPath)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            start.ArgumentList.Add("--list-devices");
+            using var probe = new Process { StartInfo = start };
+            if (!probe.Start()) return null;
+            var text = probe.StandardOutput.ReadToEnd() + probe.StandardError.ReadToEnd();
+            if (!probe.WaitForExit(5000)) { try { probe.Kill(); } catch { } }
+            var devices = new List<(string Id, string Name)>();
+            foreach (var line in text.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (!trimmed.StartsWith("Vulkan", StringComparison.Ordinal)) continue;
+                var colon = trimmed.IndexOf(": ", StringComparison.Ordinal);
+                if (colon <= 0) continue;
+                var rest = trimmed[(colon + 2)..];
+                var memory = rest.LastIndexOf(" (", StringComparison.Ordinal);
+                devices.Add((trimmed[..colon].Trim(), memory > 0 ? rest[..memory].Trim() : rest.Trim()));
+            }
+            if (devices.Count < 2) return null;
+            return devices.FirstOrDefault(device => IsDiscrete(device.Name)).Id;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsDiscrete(string name) =>
+        name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("GeForce", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("RTX", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("Quadro", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("Radeon Pro", StringComparison.OrdinalIgnoreCase)
+        || name.Contains("Intel(R) Arc", StringComparison.OrdinalIgnoreCase);
 
     private void StopRunner()
     {
