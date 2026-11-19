@@ -18,10 +18,10 @@ internal static class LinuxCapture
         // 门户连续失败时就歇一会儿，免得每句话都先等一次超时。
         if (DateTime.UtcNow < screenCaptureBlockedUntil) throw new IOException("桌面截图暂时停用，稍后自动重试。");
         var start = new ProcessStartInfo(Path.Combine(AppContext.BaseDirectory, "runtime/BigBlueFish.PortalCapture")) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
-        using var process = LinuxProcesses.Start(start);
+        using var process = LinuxProcesses.StartScreenshot(start);
         // 桌面门户偶尔会把请求挂住（实测能拖到二十多秒），读屏慢一点没关系，但不能拖住整句吐字。
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(token);
-        limit.CancelAfter(TimeSpan.FromSeconds(3));
+        limit.CancelAfter(TimeSpan.FromSeconds(5));
         using var cancel = limit.Token.Register(() => { try { process.Kill(true); } catch { } });
         var errors = process.StandardError.ReadToEndAsync(limit.Token); using var bytes = new MemoryStream();
         try
@@ -30,18 +30,18 @@ internal static class LinuxCapture
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         {
-            screenCaptureBlockedUntil = DateTime.UtcNow.AddMinutes(2);
-            throw new IOException("桌面截图超时（门户 3 秒没有返回）。");
+            screenCaptureBlockedUntil = DateTime.UtcNow.AddSeconds(30);
+            throw new IOException("桌面截图超时（门户 5 秒没有返回）。");
         }
         if (process.ExitCode != 0)
         {
-            screenCaptureBlockedUntil = DateTime.UtcNow.AddMinutes(2);
+            screenCaptureBlockedUntil = DateTime.UtcNow.AddSeconds(30);
             throw new IOException((await errors).Trim());
         }
         var bitmap = SKBitmap.Decode(bytes.ToArray());
         if (bitmap == null)
         {
-            screenCaptureBlockedUntil = DateTime.UtcNow.AddMinutes(2);
+            screenCaptureBlockedUntil = DateTime.UtcNow.AddSeconds(30);
             throw new IOException("桌面截图未返回有效图像。");
         }
         using (bitmap)
