@@ -35,6 +35,35 @@ sys.path.insert(0, str(ROOT))
 import f5_tts_run as f5  # noqa: E402  复用 torchaudio 补丁与模型缓存
 
 REF_ROOTS = (ROOT / "refs" / "kids",)
+
+
+class DeadPipeSafe:
+    """桌宠异常退出后，接走本服务输出的进程已经不在了，管道写端只会拿到 BrokenPipe。
+
+    F5 推理时 tqdm 和 f5_tts_run 都要往 stderr 写进度，一次写失败就会把整次合成打断，
+    而异常回吐 traceback 时又会再写一次 stderr，于是连接被直接关掉，桌宠只看到“没声音”。
+    这里把写日志变成纯尽力而为：管道断了就丢掉，合成照常返回音频。
+    """
+
+    __slots__ = ("_stream",)
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, text):
+        try:
+            return self._stream.write(text)
+        except (BrokenPipeError, OSError):
+            return len(text)
+
+    def flush(self):
+        try:
+            self._stream.flush()
+        except (BrokenPipeError, OSError):
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
 DEFAULT_VOICE = "kid_005614"
 
 
@@ -204,6 +233,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main(argv: list[str] | None = None) -> int:
+    sys.stdout = DeadPipeSafe(sys.stdout)
+    sys.stderr = DeadPipeSafe(sys.stderr)
     parser = argparse.ArgumentParser(description="F5-TTS 常驻服务")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--host", default="127.0.0.1")
