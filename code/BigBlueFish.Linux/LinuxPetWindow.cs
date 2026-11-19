@@ -210,7 +210,7 @@ internal sealed partial class LinuxPetWindow : Window
     {
         if (bubbleWindow.IsVisible) return;
         bubbleWindow.Show(this);
-        if (OperatingSystem.IsMacOS()) MoveBubble(); // same macOS backend issue as the pet window: size set while hidden is dropped
+        MoveBubble(); // re-measure after mapping: the first measure before the window is shown yields zero-width bubble text
         // Some X11 WMs discard ABOVE when a window is withdrawn. Reassert it
         // after mapping, without activating the bubble or raising it per letter.
         bubbleWindow.Topmost = false;
