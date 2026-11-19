@@ -203,6 +203,11 @@ internal sealed partial class LinuxPetWindow
         var text = new TextBox { AcceptsReturn = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxLength = 4000,
             Height = 56, Padding = new Thickness(0, 2, 22, 0), FontSize = 14, Foreground = Hair,
             Background = Avalonia.Media.Brushes.Transparent, BorderThickness = new Thickness(0), PlaceholderText = hint };
+        // Fluent 的 TextBox 模板在焦点状态直接给内部边框铺白底和强调色描边，改控件自身的 Background/BorderThickness 拦不住，
+        // 只能把模板取用的主题资源换成透明，让奶油色气泡底透上来。
+        foreach (var key in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled",
+                                    "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused", "TextControlBorderBrushDisabled" })
+            text.Resources[key] = Avalonia.Media.Brushes.Transparent;
         Avalonia.Automation.AutomationProperties.SetName(text, hint);
         var editor = new Grid(); editor.Children.Add(text);
         var status = new TextBlock { Text = "Ctrl+Enter 发送", Foreground = Avalonia.Media.Brushes.SlateGray, FontSize = 11,
