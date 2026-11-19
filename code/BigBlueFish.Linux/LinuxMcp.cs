@@ -15,6 +15,7 @@ internal sealed partial class LinuxPetWindow
 {
 #if COMPANION_SAFE
     static bool McpAvailable => false;
+    bool McpInputAvailable => false;
     bool AgentDailyActive => false;
     void TickAgent(DateTime now) { }
     void ConfigureAgent() { }

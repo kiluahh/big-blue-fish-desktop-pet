@@ -106,7 +106,7 @@ internal sealed partial class LinuxPetWindow : Window
             var point = e.GetCurrentPoint(this);
             if (point.Properties.IsRightButtonPressed) { PublishInteraction("click", new { button = "right", Position.X, Position.Y }); OpenMenu(); e.Handled = true; return; }
             if (!point.Properties.IsLeftButtonPressed) return;
-            if (e.ClickCount == 2 && TryOpenMcpInput()) { lastClickAt = 0; PublishInteraction("click", new { button = "left", count = 2, Position.X, Position.Y }); e.Handled = true; return; }
+            if (e.ClickCount == 2 && StartSpeechTest()) { lastClickAt = 0; PublishInteraction("click", new { button = "left", count = 2, Position.X, Position.Y }); e.Handled = true; return; }
             dragging = true; dragged = false; moveRule = null; windowOrigin = Position; Cursor = PalmGrab;
             var screenPoint = this.PointToScreen(point.Position); dragOrigin = screenPoint;
             e.Pointer.Capture(this); e.Handled = true;
@@ -128,7 +128,7 @@ internal sealed partial class LinuxPetWindow : Window
                 var click = this.PointToScreen(e.GetPosition(this)); long at = Environment.TickCount64;
                 bool twice = lastClickAt != 0 && at - lastClickAt <= 500 && Math.Abs(click.X-lastClickPoint.X)+Math.Abs(click.Y-lastClickPoint.Y) <= 8;
                 lastClickAt = at; lastClickPoint = click;
-                if (twice && TryOpenMcpInput()) lastClickAt = 0;
+                if (twice && StartSpeechTest()) lastClickAt = 0;
                 else if (!Puppet) Play(policy.Choose("Click", Context(), random), "Click");
             }
             e.Handled = true;
@@ -474,6 +474,18 @@ internal sealed partial class LinuxPetWindow : Window
         ShowText(text, true);
 #endif
     }
+    // 左键双击 = 吐字测试（原先是打开聊天输入框；聊天改到右键菜单）。正在生成时也吃掉这次双击，免得变成拖拽。
+    bool StartSpeechTest()
+    {
+        if (closed || phase == "Exit") return false;
+        _ = RunSpeechTest();
+        return true;
+    }
+    async Task RunSpeechTest()
+    {
+        try { await SpeakManual(false); }
+        catch (Exception error) { DiagnosticLog.Write(DiagnosticEvent.SpeechFailed, kind: "test", error: error); }
+    }
     async Task SpeakManual(bool weather)
     {
         if (closed || phase == "Exit") return;
@@ -503,7 +515,7 @@ internal sealed partial class LinuxPetWindow : Window
     {
         var menu = new ContextMenu();
         MenuItem Item(string title, Action action, bool available = true) { var item = new MenuItem { Header = title, IsEnabled = available }; item.Click += (_, _) => action(); return item; }
-        menu.ItemsSource = new[] { Item("设置", OpenSettings), Item("天气", async () => await SpeakManual(true)), Item("吐字测试", async () => await SpeakManual(false)),
+        menu.ItemsSource = new[] { Item("设置", OpenSettings), Item("天气", async () => await SpeakManual(true)), Item("聊天", () => { TryOpenMcpInput(); }, McpInputAvailable),
             Item(hidden ? "显示桌宠" : "隐藏桌宠", () => { if (hidden) { hidden = false; Show(); Clamp(); } else { hidden = true; Hide(); bubbleWindow.Hide(); speechVersion++; brain.CancelGeneration(); StopVoice(); } }), Item("关闭桌宠", Close) };
         ContextMenu = menu; menu.Open(this);
     }

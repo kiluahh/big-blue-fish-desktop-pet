@@ -56,7 +56,7 @@ internal sealed partial class LinuxPetWindow
             refreshWorkspace(); refreshConfiguration();
             if (select.SelectedItem is ComboBoxItem { Tag: "antigravity" } selected)
                 selected.Content = "Antigravity CLI" + (adapters.FindExecutable(HarnessCatalog.Get("antigravity")) == null ? " · 连接时准备官方组件" : " · 已检测到");
-            state.Text = (agent?.Status ?? "尚未连接") + "\n" + (agent?.Detail ?? "选择后连接，双击鱼鱼即可对话。");
+            state.Text = (agent?.Status ?? "尚未连接") + "\n" + (agent?.Detail ?? "选择后连接，右键鱼鱼选“聊天”即可对话。");
             details.Text = $"程序：{agent?.ExecutablePath}\n版本：{agent?.Version}\n模型：{agent?.CurrentModel}\n对话编号：{agent?.SessionId}\n内部工具连接：{mcpServer?.Connections ?? 0}\n点击响应：{Preferences.AgentRespondToClick}；拖动响应：{Preferences.AgentRespondToDrag}（可由 Agent 调整）";
             wake.Text = Preferences.PuppetMode && Preferences.AgentDailySpeech ? "下一次日常关心：" + (agent?.NextWake ?? "等待 Agent 安排")
                 : Preferences.PuppetMode ? "Agent 安排日常关心的时机，本地模型负责吐字。下一次关心：" + (agent?.NextWake ?? "等待 Agent 预约") : Preferences.AgentDailySpeech ? "鱼鱼决定何时关心主人，Agent 编写关心的话。" : "鱼鱼按自己的节奏关心主人，日常说话使用内置模型。";
