@@ -20,6 +20,7 @@ internal sealed partial class LinuxPetWindow
             switch (command)
             {
                 case "settings": OpenSettings(); break;
+                case "voice-settings": OpenSettings(); openVoicePage?.Invoke(); break;
                 case "close-settings": settings?.Close(); break;
                 case "speech-test": await Speak(false); break;
                 case "weather": await Speak(true); break;
@@ -35,6 +36,7 @@ internal sealed partial class LinuxPetWindow
 #if !COMPANION_SAFE
                 case "render-input": if (mcpInput != null) RenderControl(mcpInput, "input.png"); break;
 #endif
+                case var spoken when spoken.StartsWith("say "): SayExternal(spoken[4..]); break;
                 default: if (command.StartsWith("bubble ")) ShowText(command[7..], true); break;
             }
         } catch (Exception error) { File.WriteAllText("test-error.txt", error.ToString()); }

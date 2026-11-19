@@ -64,14 +64,24 @@ internal static class VoiceServicePlan
             var relative = !Path.IsPathRooted(pick) && !pick.Contains('\\') && !pick.Contains('/');
             return relative ? pick : Path.GetFullPath(Path.IsPathRooted(pick) ? pick : Path.Combine(voiceDirectory, pick));
         }
-        foreach (var candidate in new[]
-        {
-            Path.Combine(voiceDirectory, ".venv", "Scripts", "python.exe"),
-            Path.Combine(voiceDirectory, "venv", "Scripts", "python.exe"),
-            Path.Combine(voiceDirectory, "python.exe")
-        })
+        // A venv is platform specific: Scripts/python.exe on Windows, bin/python on Linux and macOS.
+        var candidates = OperatingSystem.IsWindows()
+            ? new[]
+            {
+                Path.Combine(voiceDirectory, ".venv", "Scripts", "python.exe"),
+                Path.Combine(voiceDirectory, "venv", "Scripts", "python.exe"),
+                Path.Combine(voiceDirectory, "python.exe")
+            }
+            : new[]
+            {
+                Path.Combine(voiceDirectory, ".venv", "bin", "python3"),
+                Path.Combine(voiceDirectory, ".venv", "bin", "python"),
+                Path.Combine(voiceDirectory, "venv", "bin", "python3"),
+                Path.Combine(voiceDirectory, "venv", "bin", "python")
+            };
+        foreach (var candidate in candidates)
             if (exists(candidate)) return candidate;
-        return "python";
+        return OperatingSystem.IsWindows() ? "python" : "python3";
     }
 
     internal static VoiceServiceLaunch? TryDescribe(CompanionPreferences preferences, string voiceDirectory, Func<string, bool>? exists = null)
@@ -331,6 +341,8 @@ internal sealed class VoiceServiceProcess : IVoiceServiceProcess
         // Kill(true) walks the children of the venv shim; taskkill is the fallback when that walk races.
         try { if (!process.HasExited) process.Kill(entireProcessTree: true); return; }
         catch { }
+        // taskkill only exists on Windows; on Unix the first kill is the whole story.
+        if (!OperatingSystem.IsWindows()) return;
         try
         {
             using var kill = Process.Start(new ProcessStartInfo("taskkill", $"/PID {process.Id} /T /F")

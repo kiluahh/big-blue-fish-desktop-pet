@@ -31,6 +31,14 @@ internal sealed partial class LinuxPetWindow : Window
     // The two palm states ship as PNGs derived from the Windows .cur files; X11 shows them
     // only where the input shape lets the window receive the pointer.
     static readonly Cursor Palm = LoadCursor("Palm"), PalmGrab = LoadCursor("PalmGrab");
+#if COMPANION_LINUX
+    // Speech: one HTTP client for all three local engines, an external player for low latency,
+    // and the service host that owns the python process tree.
+    readonly LinuxVoice voice;
+    IVoiceServiceHost? voiceService = new CompanionVoiceService();
+    DateTime voiceHoldUntil = DateTime.MinValue;
+#endif
+    double typingSeconds;
     string currentAction = "", phase = "Startup", fullText = "";
     string? nextExternalText;
     DateTime nextSpeech = DateTime.UtcNow.AddSeconds(45), nextEvent = DateTime.MaxValue, nextWarmup;
@@ -55,6 +63,9 @@ internal sealed partial class LinuxPetWindow : Window
     internal LinuxPetWindow()
     {
         mutex = new Mutex(true, "BigBlueFish.Linux." + Environment.UserName, out var first);
+#if COMPANION_LINUX
+        voice = new(() => Path.Combine(Preferences.SpeechDirectory, "cache"));
+#endif
         if (!first) Environment.Exit(0);
         DiagnosticLog.ConfigureDirectories(AppContext.BaseDirectory, Environment.CurrentDirectory);
         DiagnosticLog.Write(DiagnosticEvent.AppStarted, kind: "Linux", directory: Environment.CurrentDirectory);
@@ -84,6 +95,9 @@ internal sealed partial class LinuxPetWindow : Window
             if (Puppet) Play(policy.Find("待机呼吸休闲"), "PuppetIdle");
             else { Play(policy.Find("女仆屈膝礼仪"), "Startup"); Welcome(); }
             InitializeMcp(); InitializeTray(); timer.Start();
+#if COMPANION_LINUX
+            if (Preferences.SpeechEnabled && Preferences.SpeechAutoStart) EnsureVoiceService();
+#endif
             if (!File.Exists("model-selection.json") && !brain.ModelAvailable && !App.Args.Contains("--test-mode")) await InstallModel();
             if (Preferences.CheckUpdatesOnStartup && !App.Args.Contains("--test-mode")) _ = CheckUpdates(false);
         };
@@ -127,7 +141,11 @@ internal sealed partial class LinuxPetWindow : Window
             speechVersion++; brain.Stop(); moveRule = null; settings?.Close(); hidden = false; fullscreenHidden = false; Show(); player.Paused = false;
             Play(policy.Find("女仆屈膝礼仪"), "Exit"); ShowText("主人再见~鱼鱼喜欢主人哦", false, true);
         };
-        Closed += (_, _) => { DiagnosticLog.Write(DiagnosticEvent.AppStopped, kind: "Linux"); closed = true; timer.Stop(); StopMcp(); brain.Dispose(); player.Dispose(); bubbleWindow.Close(); settings?.Close(); Save(); mutex.Dispose(); (Avalonia.Application.Current!.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)!.Shutdown(); };
+        Closed += (_, _) => { DiagnosticLog.Write(DiagnosticEvent.AppStopped, kind: "Linux"); closed = true; timer.Stop(); StopMcp(); brain.Dispose(); player.Dispose();
+#if COMPANION_LINUX
+            StopVoice(); voiceService?.Stop(); voice.Dispose();
+#endif
+            bubbleWindow.Close(); settings?.Close(); Save(); mutex.Dispose(); (Avalonia.Application.Current!.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)!.Shutdown(); };
         timer.Tick += async (_, _) => await Tick();
     }
     CompanionAnimationContext Context() => new(DateTime.Now, BreakfastHour: Preferences.BreakfastHour, LunchHour: Preferences.LunchHour, DinnerHour: Preferences.DinnerHour);
@@ -208,12 +226,13 @@ internal sealed partial class LinuxPetWindow : Window
         greetingNoticeActive = true;
     }
     void EndWelcome() { if (greetingNoticeActive) bubbleWindow.Hide(); greetingNoticeActive = false; }
-    void ShowText(string text, bool external, bool immediate = false, bool fromModel = false)
+    void ShowText(string text, bool external, bool immediate = false, bool fromModel = false, double audioSeconds = 0)
     {
         greetingNoticeActive = false;
         DiagnosticLog.Write(DiagnosticEvent.BubbleShown, kind: external ? "agent" : fromModel ? "local" : "notice", chars: text.Length);
         fullText = text; textBoundaries = StringInfo.ParseCombiningCharacters(text); externalSpeech = external; modelReply = fromModel;
         typing = !immediate && textBoundaries.Length > 1; typingClock.Restart(); bubbleUntil = DateTime.MaxValue;
+        typingSeconds = typing && audioSeconds > 0 ? audioSeconds : 0;
         bubbleText.Text = typing ? text[..textBoundaries[1]] : text;
         MoveBubble(); if (!hidden && !fullscreenHidden) ShowBubble(); if (!typing && phase is not ("Startup" or "Exit")) ResetDwell();
     }
@@ -221,7 +240,7 @@ internal sealed partial class LinuxPetWindow : Window
     {
         Dispatcher.UIThread.Post(() => {
             if (expectedVersion != speechVersion || Puppet && !agentTriggered || closed || hidden || fullscreenHidden || !Preferences.ModelEnabled || !brain.CanRunOnCurrentPower) return;
-            greetingNoticeActive = false; streamed = true; fullText = text; typing = false; externalSpeech = false; modelReply = true; bubbleText.Text = text; bubbleUntil = DateTime.MaxValue;
+            greetingNoticeActive = false; streamed = true; fullText = text; typing = false; typingSeconds = 0; externalSpeech = false; modelReply = true; bubbleText.Text = text; bubbleUntil = DateTime.MaxValue;
             MoveBubble(); ShowBubble();
         });
     }
@@ -237,7 +256,102 @@ internal sealed partial class LinuxPetWindow : Window
         bubbleWindow.ShowInTaskbar = true;
         bubbleWindow.ShowInTaskbar = false;
     }
-    void ResetDwell() { int duration = CompanionPreferences.BubbleDurations[Preferences.BubbleDurationIndex]; bubbleUntil = duration == 0 ? DateTime.MaxValue : DateTime.UtcNow.AddSeconds(duration); }
+    void ResetDwell()
+    {
+        int duration = CompanionPreferences.BubbleDurations[Preferences.BubbleDurationIndex];
+        var until = duration == 0 ? DateTime.MaxValue : DateTime.UtcNow.AddSeconds(duration);
+#if COMPANION_LINUX
+        // A sentence is often longer than the chosen dwell time; keep the bubble while it is still being spoken.
+        if (DateTime.UtcNow < voiceHoldUntil && voiceHoldUntil > until) until = voiceHoldUntil;
+#endif
+        bubbleUntil = until;
+    }
+    void StopVoice()
+    {
+#if COMPANION_LINUX
+        voice.Stop(); voiceHoldUntil = DateTime.MinValue;
+#endif
+    }
+#if COMPANION_LINUX
+    bool Speaks(VoiceScope scope) => Preferences.SpeechEnabled && scope switch
+    {
+        VoiceScope.Automatic => Preferences.SpeechAutoCare,
+        VoiceScope.Interactive => Preferences.SpeechInteraction,
+        _ => Preferences.SpeechExternal
+    };
+
+    // The local service belongs to the pet: started in the background and taken down on exit.
+    void EnsureVoiceService() => _ = EnsureVoiceServiceAsync();
+
+    internal async Task<VoiceServiceState> EnsureVoiceServiceAsync(CancellationToken token = default)
+    {
+        var host = voiceService;
+        if (host == null) return VoiceServiceState.Disabled;
+        try { return await host.EnsureStartedAsync(Preferences, token).ConfigureAwait(true); }
+        catch (Exception error)
+        {
+            DiagnosticLog.Write(DiagnosticEvent.VoiceServiceFailed, kind: "voice", state: "failed", error: error);
+            return VoiceServiceState.Failed;
+        }
+    }
+
+    /// <summary>Shows the bubble, then speaks it if the scope allows it. Text waits for audio only when asked.</summary>
+    internal void ShowVoiceText(string text, VoiceScope scope, bool external = false, bool fromModel = false)
+    {
+        if (Speaks(scope) && Preferences.SpeechBubbleWithAudio) { _ = SpeakThenShowAsync(text, scope, external, fromModel); return; }
+        ShowText(text, external, fromModel: fromModel);
+        if (Speaks(scope)) _ = SpeakAsync(text);
+    }
+
+    // Bubble-delay mode: synthesize first, then reveal the text and start the clip together.
+    async Task SpeakThenShowAsync(string text, VoiceScope scope, bool external, bool fromModel)
+    {
+        var token = voice.BeginSpeaking();
+        var started = DateTime.UtcNow;
+        DiagnosticLog.Write(DiagnosticEvent.SpeechStarted, kind: "voice", chars: text.Length);
+        VoiceClip? clip;
+        try { clip = await voice.SynthesizeAsync(text, Preferences, token).ConfigureAwait(true); }
+        catch (OperationCanceledException) { return; }
+        if (token.IsCancellationRequested) return;
+        if (clip == null)
+        {
+            // Nothing to hear, so do not keep the owner waiting: show the text as usual.
+            DiagnosticLog.Write(DiagnosticEvent.SpeechFailed, kind: "voice");
+            ShowText(text, external, fromModel: fromModel);
+            return;
+        }
+        voiceHoldUntil = DateTime.UtcNow.AddSeconds(clip.Seconds + 2);
+        var revealed = false;
+        var fallback = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+        void Reveal()
+        {
+            if (revealed) return;
+            revealed = true;
+            fallback.Stop();
+            ShowText(text, external, false, fromModel, clip.Seconds);
+        }
+        fallback.Tick += (_, _) => Reveal();
+        fallback.Start();
+        voice.Play(clip, Preferences, () => Dispatcher.UIThread.Post(() => { fallback.Stop(); Reveal(); }));
+        DiagnosticLog.Write(DiagnosticEvent.SpeechCompleted, kind: "voice", chars: text.Length,
+            elapsedMs: (DateTime.UtcNow - started).TotalMilliseconds);
+    }
+
+    // Text-first mode: the bubble is already up, so the clip only extends its dwell time.
+    async Task SpeakAsync(string text)
+    {
+        var token = voice.BeginSpeaking();
+        VoiceClip? clip;
+        try { clip = await voice.SynthesizeAsync(text, Preferences, token).ConfigureAwait(true); }
+        catch (OperationCanceledException) { return; }
+        if (clip == null) { DiagnosticLog.Write(DiagnosticEvent.SpeechFailed, kind: "voice"); return; }
+        if (token.IsCancellationRequested || fullText != text) return;
+        voice.Play(clip, Preferences);
+        voiceHoldUntil = DateTime.UtcNow.AddSeconds(clip.Seconds + 2);
+        if (bubbleWindow.IsVisible) ResetDwell();
+        DiagnosticLog.Write(DiagnosticEvent.SpeechCompleted, kind: "voice", chars: text.Length);
+    }
+#endif
     void MoveBubble()
     {
         if (bubbleFrame == null || bubbleWindow == null) return;
@@ -266,14 +380,15 @@ internal sealed partial class LinuxPetWindow : Window
         }
         else if (!AgentDailyActive && !modelInstalling && Preferences.ModelEnabled && brain.ModelAvailable && !generating && !brain.Busy && brain.RunnerPid == null && now >= nextWarmup) { nextWarmup = now.AddMinutes(2); _ = brain.WarmUp(); }
         bool full = Preferences.HideOnFullscreen && CompanionNative.IsFullscreen();
-        if (full && !fullscreenHidden && !hidden) { fullscreenHidden = true; Hide(); bubbleWindow.Hide(); speechVersion++; brain.CancelGeneration(); }
+        if (full && !fullscreenHidden && !hidden) { fullscreenHidden = true; Hide(); bubbleWindow.Hide(); speechVersion++; brain.CancelGeneration(); StopVoice(); }
         else if (!full && fullscreenHidden) { fullscreenHidden = false; if (!hidden) { Show(); Clamp(); } }
         player.Paused = hidden || fullscreenHidden;
         TickAgent(now);
         if (hidden || fullscreenHidden) return;
         if (typing)
         {
-            int count = Math.Min(textBoundaries.Length, 1 + (int)(typingClock.Elapsed.TotalSeconds * 28));
+            double rate = typingSeconds > 0 && textBoundaries.Length > 1 ? (textBoundaries.Length - 1) / typingSeconds : 28;
+            int count = Math.Min(textBoundaries.Length, 1 + (int)(typingClock.Elapsed.TotalSeconds * rate));
             bubbleText.Text = count >= textBoundaries.Length ? fullText : fullText[..textBoundaries[count]];
             if (count == textBoundaries.Length) { typing = false; ResetDwell(); }
         }
@@ -300,12 +415,32 @@ internal sealed partial class LinuxPetWindow : Window
             nextSpeech = DateTime.UtcNow.Add(Preferences.NextSpeechDelay(random));
             var text = weather ? await brain.GenerateWeather(p => Partial(p, version, agentTriggered)) : await brain.Generate(Preferences.PublicInfo, Preferences.ForegroundEnabled, lastForeground, p => Partial(p, version, agentTriggered));
             if (version != speechVersion || Puppet && !agentTriggered || hidden || fullscreenHidden || closed || !Preferences.ModelEnabled || !brain.CanRunOnCurrentPower) return;
-            if (text.Length > 0) { if (streamed) { fullText = text; bubbleText.Text = text; ResetDwell(); } else ShowText(text, false, fromModel: true); }
+            if (text.Length > 0) {
+                if (streamed) {
+                    fullText = text; bubbleText.Text = text; ResetDwell();
+#if COMPANION_LINUX
+                    if (Speaks(agentTriggered ? VoiceScope.Interactive : VoiceScope.Automatic)) _ = SpeakAsync(text);
+#endif
+                }
+#if COMPANION_LINUX
+                else ShowVoiceText(text, agentTriggered ? VoiceScope.Interactive : VoiceScope.Automatic, fromModel: true);
+#else
+                else ShowText(text, false, fromModel: true);
+#endif
+            }
             else if (streamed && !externalSpeech) bubbleWindow.Hide();
         }
         finally { generating = false; loading.IsVisible = false; }
     }
-    void SayExternal(string text) { speechVersion++; brain.CancelGeneration(); loading.IsVisible = false; ShowText(text, true); }
+    void SayExternal(string text)
+    {
+        speechVersion++; brain.CancelGeneration(); loading.IsVisible = false;
+#if COMPANION_LINUX
+        ShowVoiceText(text, VoiceScope.External, external: true);
+#else
+        ShowText(text, true);
+#endif
+    }
     async Task SpeakManual(bool weather)
     {
         if (closed || phase == "Exit") return;
@@ -336,7 +471,7 @@ internal sealed partial class LinuxPetWindow : Window
         var menu = new ContextMenu();
         MenuItem Item(string title, Action action, bool available = true) { var item = new MenuItem { Header = title, IsEnabled = available }; item.Click += (_, _) => action(); return item; }
         menu.ItemsSource = new[] { Item("设置", OpenSettings), Item("天气", async () => await SpeakManual(true)), Item("吐字测试", async () => await SpeakManual(false)),
-            Item(hidden ? "显示桌宠" : "隐藏桌宠", () => { if (hidden) { hidden = false; Show(); Clamp(); } else { hidden = true; Hide(); bubbleWindow.Hide(); speechVersion++; brain.CancelGeneration(); } }), Item("关闭桌宠", Close) };
+            Item(hidden ? "显示桌宠" : "隐藏桌宠", () => { if (hidden) { hidden = false; Show(); Clamp(); } else { hidden = true; Hide(); bubbleWindow.Hide(); speechVersion++; brain.CancelGeneration(); StopVoice(); } }), Item("关闭桌宠", Close) };
         ContextMenu = menu; menu.Open(this);
     }
     void CloseImmediately() { exitReady = true; Close(); }

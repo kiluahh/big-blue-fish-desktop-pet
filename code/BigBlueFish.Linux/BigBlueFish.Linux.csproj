@@ -17,6 +17,12 @@
     <Compile Include="../BigBlueFish.Windows/Companion/CompanionNews.cs" Link="Shared/CompanionNews.cs" />
     <Compile Include="../BigBlueFish.Windows/Companion/CompanionRegions.cs" Link="Shared/CompanionRegions.cs" />
     <Compile Include="../BigBlueFish.Windows/Companion/CompanionOcrLayout.cs" Link="Shared/CompanionOcrLayout.cs" />
+    <Compile Include="../BigBlueFish.Windows/Companion/CompanionVoicePacks.cs" Link="Shared/CompanionVoicePacks.cs" />
+    <Compile Include="../BigBlueFish.Windows/Companion/CompanionVoiceService.cs" Link="Shared/CompanionVoiceService.cs" />
+    <EmbeddedResource Include="../BigBlueFish.Windows/Res/Voice/tts_server.py" LogicalName="BigBlueFish.Linux.Voice.tts_server.py" />
+    <EmbeddedResource Include="../BigBlueFish.Windows/Res/Voice/f5_tts_run.py" LogicalName="BigBlueFish.Linux.Voice.f5_tts_run.py" />
+    <EmbeddedResource Include="../BigBlueFish.Windows/Res/Voice/tts_kokoro_server.py" LogicalName="BigBlueFish.Linux.Voice.tts_kokoro_server.py" />
+    <EmbeddedResource Include="../BigBlueFish.Windows/Res/Voice/tts_gsv_server.py" LogicalName="BigBlueFish.Linux.Voice.tts_gsv_server.py" />
     <Compile Include="../../deployment/ModelStore.cs" Link="Shared/ModelStore.cs" />
     <Compile Include="../../deployment/ArtifactDownload.cs" Link="Shared/ArtifactDownload.cs" />
     <EmbeddedResource Include="../BigBlueFish.Windows/assets/regions/china-regions.json" LogicalName="BigBlueFish.Windows.assets.regions.china-regions.json" />
