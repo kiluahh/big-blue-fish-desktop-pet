@@ -263,7 +263,42 @@ internal sealed partial class LinuxPetWindow
             else if (status.Text != "已发送给 Agent") status.Text = agent.Busy ? "Agent 正在处理…" : "Ctrl+Enter 发送";
         };
         mcpInput = dialog; dialog.Closed += (_,_) => { clock.Stop(); PositionChanged -= moved; PropertyChanged -= changed; mcpInput = null; }; dialog.Opened += (_,_) => { text.Focus(); send.IsEnabled = false; };
-        clock.Start(); Follow(); dialog.Activate(); return true;
+        clock.Start(); Follow(); dialog.Activate(); KickInputMethod(dialog); return true;
+    }
+    // Avalonia 12 在 X11 上给新建窗口发“窗口已激活”时，D-Bus 输入法（ibus/fcitx）往往还没连好；连接前的激活会被
+    // DBusTextInputMethodBase 直接丢掉，之后没人补发，于是这个窗口里的输入法一直是关的：中文打不出来，
+    // 切到别的窗口再切回来才好。等它连上后补一次客户端和激活，输入法就绪就停。上游问题：
+    // https://github.com/AvaloniaUI/Avalonia/issues/22315
+    void KickInputMethod(Window target)
+    {
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+        try
+        {
+            var platform = typeof(TopLevel).GetProperty("PlatformImpl", flags)?.GetValue(target);
+            var method = platform?.GetType().GetField("_imeControl", flags)?.GetValue(platform);
+            if (method == null) return;
+            var control = method.GetType().GetInterfaces().FirstOrDefault(i => i.Name == "IX11InputMethodControl");
+            var implementation = method.GetType().GetInterfaces().FirstOrDefault(i => i.Name == "ITextInputMethodImpl");
+            var activate = control?.GetMethod("SetWindowActive");
+            var enabled = control?.GetProperty("IsEnabled")?.GetMethod;
+            if (activate == null || enabled == null) return;
+            var setClient = implementation?.GetMethod("SetClient");
+            var client = method.GetType().GetProperty("Client", flags)?.GetValue(method);
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+            timer.Tick += (_, _) => {
+                try
+                {
+                    if (mcpInput != target || DateTime.UtcNow > deadline || enabled.Invoke(method, null) is true) { timer.Stop(); return; }
+                    if (!target.IsActive) return;
+                    if (client != null) setClient?.Invoke(method, new[] { client });
+                    activate.Invoke(method, new object[] { true });
+                }
+                catch { timer.Stop(); }
+            };
+            timer.Start();
+        }
+        catch { }
     }
 #endif
 }
