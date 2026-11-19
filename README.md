@@ -75,6 +75,8 @@ sudo apt install ./BigBlueFish-v1.1.3-Linux-x64.deb
 
 安装无ACP版时换成对应的文件名即可。安装完成后，可以从应用菜单或 `bigbluefish` 命令启动鱼鱼，再到设置的“模型与信息”中点击“安装模型”，为她准备本地模型。
 
+语音朗读是可选功能，需要主人自备 Python 3.10–3.12 与依赖：在语音文件夹（默认 `~/.local/share/bigbluefish/voice`）里建好 `.venv`，装入 `f5-tts`（或 `kokoro soundfile numpy librosa`），再到设置的「语音朗读」页下载对应引擎的权重。F5 与 GPT-SoVITS 还需要参考音色：F5 放在 `voice/refs/kids/<名字>.wav` 并配一份同名 `.txt` 文本，GPT-SoVITS 使用它自己的参考音频目录。设置页可以检测服务、试听、重启和查看音色，播放优先使用 PipeWire 或 PulseAudio 的低延迟播放器，退出时语音服务随程序一并关闭。
+
 Mac 主人打开 `.dmg`，将应用拖入 Applications 后启动，具体安装与授权步骤见 [macOS 安装说明](docs/MACOS.md)。
 
 如果暂时不想下载模型，也可以先让鱼鱼以无模型模式住进桌面。这时她依然会行礼、问候、道别，播放全部动作表情，回应主人的点击和拖动。之后随时可以到设置中点击“安装模型”，让她开始读懂屏幕、开口说话。
