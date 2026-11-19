@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
 using Avalonia.Themes.Fluent;
 
 namespace BigBlueFish.Windows;
@@ -32,8 +33,14 @@ internal static class Program
             if (match.Success) Environment.SetEnvironmentVariable("PATH", match.Groups[1].Value);
         } catch (Exception) { }
     }
-    public static AppBuilder Build() => AppBuilder.Configure<App>().UsePlatformDetect()
-        .With(new X11PlatformOptions { RenderingMode = [X11RenderingMode.Software] });
+    public static AppBuilder Build()
+    {
+        var builder = AppBuilder.Configure<App>().UsePlatformDetect();
+        // fontconfig on Chinese locales can resolve the default family to a legacy X11 bitmap face that Skia cannot load,
+        // which makes Avalonia fail while creating the default glyph typeface. Pin an installed outline font on Linux.
+        if (!OperatingSystem.IsMacOS()) builder = builder.With(new FontManagerOptions { DefaultFamilyName = "Noto Sans CJK SC, Noto Sans, DejaVu Sans" });
+        return builder.With(new X11PlatformOptions { RenderingMode = [X11RenderingMode.Software] });
+    }
 }
 public sealed class App : Application
 {
